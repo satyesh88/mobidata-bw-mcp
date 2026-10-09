@@ -1,0 +1,106 @@
+import argparse
+from datetime import date, datetime
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
+
+from .models import BBox, LocationInput, RoutePoint, Vehicle
+from .tools import (
+    charging,
+    discovery,
+    health,
+    parking,
+    roadworks,
+    route_check,
+    sharing,
+    signs,
+    spatial,
+    transit,
+)
+from .tools.about import about as about_data
+
+
+def create_server(*, port: int = 8000) -> FastMCP:
+    mcp = FastMCP(
+        "MobiData BW",
+        instructions=(
+            "Use opinionated find_* tools for mobility questions. Report source, licence, "
+            "timestamp, freshness, and warnings from every result. Traffic-sign data is advisory."
+        ),
+        port=port,
+    )
+
+    mcp.tool()(discovery.search_datasets)
+    mcp.tool()(discovery.get_dataset)
+    mcp.tool()(discovery.list_layers)
+    mcp.tool()(spatial.query_layer)
+    mcp.tool()(parking.find_parking)
+    mcp.tool()(charging.find_charging)
+    mcp.tool()(sharing.find_sharing)
+    mcp.tool()(transit.find_transit)
+
+    @mcp.tool()
+    async def get_departures(
+        stop_or_station_id: str,
+        date: date | None = None,
+        from_time: datetime | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Get scheduled departures; dates near today may not be published yet."""
+        return await transit.get_departures(stop_or_station_id, date, from_time, limit)
+
+    @mcp.tool()
+    async def get_roadworks(
+        location: LocationInput | dict[str, Any] | None = None,
+        bbox: BBox | dict[str, Any] | None = None,
+        radius_m: int = 5000,
+        active_on: date | None = None,
+    ) -> dict[str, Any]:
+        """Find planned or current roadworks by radius or bbox, optionally active on a date."""
+        return await roadworks.get_roadworks(location, bbox, radius_m, active_on)
+
+    mcp.tool()(signs.find_traffic_signs)
+
+    @mcp.tool()
+    async def check_route(
+        route: dict[str, Any] | list[RoutePoint],
+        buffer_m: int = 30,
+        date: date | None = None,
+        vehicle: Vehicle | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Check a caller-supplied route for active roadworks and advisory truck restrictions."""
+        return await route_check.check_route(route, buffer_m, date, vehicle)
+
+    mcp.tool()(health.data_health)
+
+    @mcp.tool()
+    def about() -> dict[str, Any]:
+        """Describe this server, its source systems, licences, and important caveats."""
+        return about_data()
+
+    @mcp.resource("mobidata://about")
+    def about_resource() -> dict[str, Any]:
+        """Server metadata, source systems, licences, and caveats."""
+        return about_data()
+
+    return mcp
+
+
+mcp = create_server()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="MobiData BW MCP server")
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "http", "streamable-http"),
+        default="stdio",
+    )
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args()
+    transport = "streamable-http" if args.transport == "http" else args.transport
+    create_server(port=args.port).run(transport=transport)
+
+
+if __name__ == "__main__":
+    main()

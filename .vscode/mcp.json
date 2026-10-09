@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "mobidata-bw": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["--directory", "${workspaceFolder}", "run", "mobidata-bw-mcp"]
+    }
+  }
+}
