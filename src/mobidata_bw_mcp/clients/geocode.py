@@ -10,6 +10,9 @@ from .http import SourceError, http
 
 _cache: TTLCache[str, Location] = TTLCache(maxsize=512, ttl=settings.geocode_ttl)
 _bbox_cache: TTLCache[str, BBox] = TTLCache(maxsize=512, ttl=settings.geocode_ttl)
+_region_code_cache: TTLCache[str, str | None] = TTLCache(
+    maxsize=512, ttl=settings.geocode_ttl
+)
 _lock = asyncio.Lock()
 _last_request = 0.0
 
@@ -52,13 +55,13 @@ async def resolve(location: LocationInput | dict[str, Any]) -> Location:
     return result
 
 
-async def resolve_bbox(place: str) -> tuple[Location, BBox]:
+async def resolve_region(place: str) -> tuple[Location, BBox, str | None]:
     global _last_request
     key = place.strip().casefold()
     if not key:
         raise ValueError("region must not be empty")
-    if key in _cache and key in _bbox_cache:
-        return _cache[key], _bbox_cache[key]
+    if key in _cache and key in _bbox_cache and key in _region_code_cache:
+        return _cache[key], _bbox_cache[key], _region_code_cache[key]
     async with _lock:
         wait_seconds = 1.0 - (time.monotonic() - _last_request)
         if wait_seconds > 0:
@@ -72,6 +75,8 @@ async def resolve_bbox(place: str) -> tuple[Location, BBox]:
                 "viewbox": "7.5,49.8,10.6,47.5",
                 "bounded": 1,
                 "limit": 1,
+                "addressdetails": 1,
+                "extratags": 1,
             },
         )
         _last_request = time.monotonic()
@@ -84,6 +89,15 @@ async def resolve_bbox(place: str) -> tuple[Location, BBox]:
         label=payload[0].get("display_name"),
     )
     bbox = BBox(min_lat=south, min_lon=west, max_lat=north, max_lon=east)
+    official_region_code = payload[0].get("extratags", {}).get(
+        "de:regionalschluessel"
+    )
     _cache[key] = location
     _bbox_cache[key] = bbox
+    _region_code_cache[key] = official_region_code
+    return location, bbox, official_region_code
+
+
+async def resolve_bbox(place: str) -> tuple[Location, BBox]:
+    location, bbox, _official_region_code = await resolve_region(place)
     return location, bbox

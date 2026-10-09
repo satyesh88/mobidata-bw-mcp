@@ -60,7 +60,7 @@ VS Code users can start or debug the included `mobidata-bw` server from `.vscode
 | `get_roadworks` | Roadworks active on a selected date |
 | `find_traffic_signs` | Nearby signs, including truck restrictions |
 | `check_route` | Roadworks and truck signs intersecting a supplied route |
-| `data_health` | Computed freshness of parking, charging, and sharing feeds |
+| `data_health` | Fresh, stale (>30 min), and static groups using exact city codes; parking defaults to off-street |
 | `about` | Server sources and caveats |
 
 The same metadata as `about` is available at the MCP resource `mobidata://about`.
