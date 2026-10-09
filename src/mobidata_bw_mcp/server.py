@@ -1,4 +1,5 @@
 import argparse
+from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any
 
@@ -20,6 +21,12 @@ from .tools import (
 from .tools.about import about as about_data
 
 
+@asynccontextmanager
+async def lifespan(_server: FastMCP):
+    await signs.sign_index()
+    yield
+
+
 def create_server(*, port: int = 8000) -> FastMCP:
     mcp = FastMCP(
         "MobiData BW",
@@ -28,6 +35,7 @@ def create_server(*, port: int = 8000) -> FastMCP:
             "timestamp, freshness, and warnings from every result. Traffic-sign data is advisory."
         ),
         port=port,
+        lifespan=lifespan,
     )
 
     mcp.tool()(discovery.search_datasets)

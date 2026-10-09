@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from ..clients import geocode, parkapi
@@ -5,6 +6,50 @@ from ..config import DATASET_LICENSES, settings
 from ..geo import compact_dict, haversine_m
 from ..models import LocationInput, ResultEnvelope, source_info
 from .common import freshness, latest_datetime
+
+_GENERIC_NAME_WORDS = {
+    "am",
+    "cityparkhaus",
+    "heilbronn",
+    "parkhaus",
+    "parkplatz",
+    "quartiersgarage",
+}
+
+
+def _name_tokens(name: str | None) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9äöüß]+", (name or "").casefold())
+        if token not in _GENERIC_NAME_WORDS
+    }
+
+
+def _deduplicate(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    kept: list[dict[str, Any]] = []
+    removed = 0
+    for record in records:
+        duplicate_index = next(
+            (
+                index
+                for index, existing in enumerate(kept)
+                if record.get("capacity") == existing.get("capacity")
+                and _name_tokens(record.get("name")) & _name_tokens(existing.get("name"))
+                and haversine_m(
+                    record["lat"], record["lon"], existing["lat"], existing["lon"]
+                )
+                <= 200
+            ),
+            None,
+        )
+        if duplicate_index is None:
+            kept.append(record)
+            continue
+        removed += 1
+        existing = kept[duplicate_index]
+        if bool(record.get("has_realtime_data")) > bool(existing.get("has_realtime_data")):
+            kept[duplicate_index] = record
+    return kept, removed
 
 
 async def find_parking(
@@ -20,6 +65,7 @@ async def find_parking(
         {"lat": resolved.lat, "lon": resolved.lon, "radius": radius_m, "purpose": purpose},
         settings.max_limit,
     )
+    records, duplicates_removed = _deduplicate(records)
     items = []
     for record in records:
         free = record.get("realtime_free_capacity_truck" if truck else "realtime_free_capacity")
@@ -53,6 +99,17 @@ async def find_parking(
         items.append(item)
     items.sort(key=lambda item: item["distance_m"])
     stale = sum(not item.get("is_live", False) for item in items)
+    warnings = []
+    if stale:
+        warnings.append(f"{stale} of {len(items)} sites do not have current live data")
+    if duplicates_removed:
+        warnings.append(f"Removed {duplicates_removed} duplicate parking sites")
+    for item in items:
+        if item.get("free_now", 0) > item.get("capacity", float("inf")):
+            warnings.append(
+                f"{item.get('name', item.get('id'))}: reported free spaces "
+                f"({item['free_now']}) exceed capacity ({item['capacity']})"
+            )
     return ResultEnvelope(
         query={
             "location": resolved.model_dump(exclude_none=True),
@@ -72,5 +129,5 @@ async def find_parking(
         data_timestamp=latest_datetime(
             [record.get("realtime_data_updated_at") for record in records]
         ),
-        warnings=[f"{stale} of {len(items)} sites do not have current live data"] if stale else [],
+        warnings=warnings,
     ).compact()

@@ -11,13 +11,18 @@ async def search_datasets(query: str, limit: int = 10) -> dict[str, Any]:
     bounded = limit_value(limit)
     payload = await ckan.search(query, bounded)
     items = []
+    missing_licences = []
     for dataset in payload.get("results", []):
+        licence = dataset.get("license_title") or dataset.get("license_id")
+        if not licence:
+            missing_licences.append(dataset.get("title") or dataset.get("name"))
         items.append(
             {
                 "title": dataset.get("title"),
                 "slug": dataset.get("name"),
                 "description": (dataset.get("notes") or "")[:500],
-                "licence": dataset.get("license_title") or dataset.get("license_id"),
+                "licence": licence,
+                "licence_missing": not bool(licence),
                 "last_modified": dataset.get("metadata_modified"),
                 "formats": sorted(
                     {
@@ -34,17 +39,22 @@ async def search_datasets(query: str, limit: int = 10) -> dict[str, Any]:
         truncated=payload.get("count", 0) > len(items),
         items=items,
         source=source_info("mobidata-bw-catalog", settings.ckan_url, "Varies by dataset"),
+        warnings=[f"Licence metadata is missing for: {', '.join(missing_licences)}"]
+        if missing_licences
+        else [],
     ).compact()
 
 
 async def get_dataset(dataset_id: str) -> dict[str, Any]:
     """Get authoritative metadata and current resource URLs for one catalogue dataset."""
     dataset = await ckan.get(dataset_id)
+    licence = dataset.get("license_title") or dataset.get("license_id")
     item = {
         "title": dataset.get("title"),
         "slug": dataset.get("name"),
         "description": dataset.get("notes"),
-        "licence": dataset.get("license_title") or dataset.get("license_id"),
+        "licence": licence,
+        "licence_missing": not bool(licence),
         "last_modified": dataset.get("metadata_modified"),
         "resources": [
             {key: resource.get(key) for key in ("name", "format", "url") if resource.get(key)}
@@ -61,6 +71,7 @@ async def get_dataset(dataset_id: str) -> dict[str, Any]:
             item["licence"] or "Not specified",
         ),
         data_timestamp=parse_timestamp(dataset.get("metadata_modified")),
+        warnings=["Licence metadata is missing for this dataset"] if not licence else [],
     ).compact()
 
 

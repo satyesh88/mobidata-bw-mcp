@@ -44,6 +44,14 @@ async def find_sharing(
                 if kind != "any" and vehicle_kind != kind:
                     continue
                 counts = None
+            current_range = props.get("current_range_meters")
+            max_range = props.get("max_range_meters")
+            battery_pct = (
+                round(current_range / max_range * 100, 1)
+                if current_range is not None and max_range
+                else None
+            )
+            is_virtual = item_type == "station" and props.get("is_virtual_station") is True
             items.append(
                 compact_dict(
                     {
@@ -52,8 +60,14 @@ async def find_sharing(
                         "name": props.get("name"),
                         "kind": props.get("form_factor"),
                         "propulsion_type": props.get("propulsion_type"),
-                        "available": counts,
-                        "current_range_m": props.get("current_range_meters"),
+                        "available": counts if not is_virtual else None,
+                        "virtual_station_inventory": counts if is_virtual else None,
+                        "count_semantics": "virtual_station_inventory"
+                        if is_virtual
+                        else ("physical_station_inventory" if item_type == "station" else None),
+                        "current_range_m": current_range,
+                        "max_range_m": max_range,
+                        "battery_pct": battery_pct,
                         "rental_link": props.get("rental_uris_web"),
                         "lat": lat,
                         "lon": lon,
