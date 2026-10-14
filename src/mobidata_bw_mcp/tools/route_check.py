@@ -19,6 +19,7 @@ from .signs import (
     TRUCK_CODES,
     normalized_code,
     selected_signs,
+    sign_unit,
     sign_value,
 )
 
@@ -58,6 +59,8 @@ async def check_route(
                     ),
                     "kind": "roadwork",
                     "severity": "high" if props.get("type") == "ROAD_CLOSED" else "warning",
+                    "type": props.get("type"),
+                    "subtype": props.get("subtype"),
                     "street": props.get("street"),
                     "description": props.get("description") or props.get("subtype"),
                     "start": props.get("starttime"),
@@ -89,6 +92,7 @@ async def check_route(
                     "sign_code": code,
                     "description": SIGN_MEANINGS.get(code, raw_code),
                     "limit": limit_value,
+                    "limit_unit": sign_unit(raw_code),
                     "vehicle_exceeds_limit": exceeded,
                     "source": "MobiData BW traffic signs",
                 }

@@ -22,7 +22,8 @@ async def test_check_route_filters_geometry_and_active_date(monkeypatch, route) 
             "coordinates": [[9.2050, 49.1395], [9.2050, 49.1405]],
         },
         "properties": {
-            "type": "CONSTRUCTION",
+            "type": "ROAD_CLOSED",
+            "subtype": "BOTH_DIRECTIONS",
             "description": "Bridge work",
             "street": "B 27",
             "starttime": "2026-10-01T00:00:00+02:00",
@@ -54,6 +55,9 @@ async def test_check_route_filters_geometry_and_active_date(monkeypatch, route) 
 
     assert result["count"] == 1
     assert result["items"][0]["description"] == "Bridge work"
+    assert result["items"][0]["type"] == "ROAD_CLOSED"
+    assert result["items"][0]["subtype"] == "BOTH_DIRECTIONS"
+    assert result["items"][0]["severity"] == "high"
     assert result["items"][0]["km_from_start"] == pytest.approx(0.36, abs=0.05)
 
 

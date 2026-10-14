@@ -53,14 +53,14 @@ VS Code users can start or debug the included `mobidata-bw` server from `.vscode
 |---|---|
 | `search_datasets`, `get_dataset` | Discover datasets, current resources, and licences |
 | `list_layers`, `query_layer` | Explore and query GeoServer WFS layers |
-| `find_parking` | Nearby car, bicycle, or truck parking and live capacity |
+| `find_parking` | Paginated nearby car, bicycle, or truck parking and live capacity |
 | `find_charging` | Nearby chargers by power and current availability |
 | `find_sharing` | Sharing stations and free-floating vehicles |
 | `find_transit`, `get_departures` | Nearby stops and scheduled departures |
 | `get_roadworks` | Roadworks active on a selected date |
 | `find_traffic_signs` | Nearby signs, including truck restrictions |
 | `check_route` | Roadworks and truck signs intersecting a supplied route |
-| `data_health` | Fresh, stale (>30 min), and static groups using exact city codes; parking defaults to off-street |
+| `data_health` | Fresh, stale (>30 min), and no-live-feed groups with age evidence; parking defaults to off-street |
 | `about` | Server sources and caveats |
 
 The same metadata as `about` is available at the MCP resource `mobidata://about`.

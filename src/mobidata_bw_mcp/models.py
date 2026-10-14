@@ -44,6 +44,7 @@ class ResultEnvelope(BaseModel):
     query: dict[str, Any]
     count: int
     truncated: bool = False
+    next_cursor: int | str | None = None
     items: list[dict[str, Any]]
     source: SourceInfo
     data_timestamp: datetime | None = None

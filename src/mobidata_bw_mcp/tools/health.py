@@ -1,4 +1,5 @@
 from collections import Counter
+from statistics import median
 from typing import Any
 
 from ..clients import geocode, parkapi, wfs
@@ -16,12 +17,13 @@ def _classify_records(
 
     fresh_count = 0
     stale_sites = []
-    static_count = 0
+    no_live_feed_count = 0
+    live_ages: list[tuple[float, dict[str, Any], str]] = []
     for record in records:
         timestamp = record.get(timestamp_field)
         parsed = parse_timestamp(timestamp)
         if not timestamp:
-            static_count += 1
+            no_live_feed_count += 1
             continue
         age_minutes = (
             max(
@@ -31,6 +33,8 @@ def _classify_records(
             if parsed
             else None
         )
+        if age_minutes is not None:
+            live_ages.append((age_minutes, record, timestamp))
         is_stale = (
             parsed is None
             or age_minutes > FRESHNESS_THRESHOLD_MINUTES
@@ -52,11 +56,24 @@ def _classify_records(
         else:
             fresh_count += 1
     live_capable_count = fresh_count + len(stale_sites)
+    oldest_site = None
+    if live_ages:
+        oldest_age, oldest_record, oldest_timestamp = max(
+            live_ages, key=lambda item: item[0]
+        )
+        oldest_site = {
+            "name": oldest_record.get("name")
+            or oldest_record.get("feed_id")
+            or oldest_record.get("id")
+            or "Unnamed record",
+            "last_updated_at": oldest_timestamp,
+            "age_minutes": round(oldest_age, 1),
+        }
     return {
         "groups": {
             "live_and_fresh": fresh_count,
             "live_capable_but_stale": len(stale_sites),
-            "static_by_design": static_count,
+            "no_live_feed": no_live_feed_count,
         },
         "live_capable_count": live_capable_count,
         "live_percent": round(fresh_count * 100 / live_capable_count, 1)
@@ -67,6 +84,13 @@ def _classify_records(
         ),
         "stale_sites": stale_sites,
         "freshness_threshold_minutes": FRESHNESS_THRESHOLD_MINUTES,
+        "median_age_min": round(median(age for age, _, _ in live_ages), 1)
+        if live_ages
+        else None,
+        "max_age_min": round(max(age for age, _, _ in live_ages), 1)
+        if live_ages
+        else None,
+        "oldest_site": oldest_site,
     }
 
 
@@ -175,7 +199,7 @@ async def data_health(
     dataset: str = "all",
     parking_scope: str = "off_street",
 ) -> dict[str, Any]:
-    """Audit fresh, stale, and static records; parking defaults to off-street sites."""
+    """Audit fresh, stale, and no-live-feed records; parking defaults to off-street."""
     if dataset not in {"parking", "charging", "sharing", "all"}:
         raise ValueError("dataset must be parking, charging, sharing, or all")
     if parking_scope not in {"off_street", "on_street", "all"}:

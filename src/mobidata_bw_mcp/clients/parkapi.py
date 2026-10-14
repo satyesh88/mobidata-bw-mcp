@@ -4,13 +4,19 @@ from ..config import settings
 from .http import http
 
 
-async def parking_sites(params: dict[str, Any], limit: int) -> tuple[list[dict[str, Any]], int]:
+async def parking_sites(
+    params: dict[str, Any], limit: int
+) -> tuple[list[dict[str, Any]], int, int | None]:
     requested = min(limit, settings.max_limit)
     payload = await http.get_json(
         f"{settings.parkapi_url}parking-sites",
         {"ignore_duplicates": True, **params, "limit": requested},
     )
-    return payload.get("items", []), int(payload.get("total_count", 0))
+    return (
+        payload.get("items", []),
+        int(payload.get("total_count", 0)),
+        payload.get("next_id"),
+    )
 
 
 async def all_parking_sites(params: dict[str, Any] | None = None) -> list[dict[str, Any]]:

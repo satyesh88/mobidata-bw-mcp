@@ -20,6 +20,13 @@ SIGN_MEANINGS = {
     "266": "Length limit",
     "277": "Truck overtaking prohibited",
 }
+SIGN_LIMIT_UNITS = {
+    "262": "t",
+    "263": "t",
+    "264": "m",
+    "265": "m",
+    "266": "m",
+}
 SIGN_CAVEATS = [
     "Traffic-sign data is not legally binding and municipal coverage varies.",
     "Supplementary signs such as 'Lieferverkehr frei' are not included; "
@@ -32,19 +39,22 @@ _features: list[dict[str, Any]] = []
 def normalized_code(value: str | None) -> str | None:
     if not value:
         return None
-    match = re.search(r"(?:DE:)?(\d{3})", value)
+    match = re.search(r"(?:^|[A-Z]{2}:)(\d{3})(?=$|[-\[])", value, re.IGNORECASE)
     return match.group(1) if match else value
 
 
 def sign_value(value: str | None) -> float | None:
     if not value:
         return None
-    suffix = value.split(":")[-1].split("-")[1:]
-    if not suffix:
+    code = normalized_code(value)
+    if code not in SIGN_LIMIT_UNITS:
         return None
-    text = ".".join(suffix).replace(",", ".")
-    match = re.search(r"\d+(?:\.\d+)?", text)
-    return float(match.group()) if match else None
+    match = re.search(r"(?:\[|-)\s*(\d+(?:[.,]\d+)?)\s*\]?", value)
+    return float(match.group(1).replace(",", ".")) if match else None
+
+
+def sign_unit(value: str | None) -> str | None:
+    return SIGN_LIMIT_UNITS.get(normalized_code(value))
 
 
 async def sign_index() -> tuple[STRtree, list[dict[str, Any]]]:
@@ -115,7 +125,8 @@ async def find_traffic_signs(
                     "sign_code": code,
                     "raw_sign_code": raw_code,
                     "meaning": SIGN_MEANINGS.get(code),
-                    "value": sign_value(raw_code),
+                    "limit_value": sign_value(raw_code),
+                    "limit_unit": sign_unit(raw_code),
                     "municipality": props.get("Verwaltungsebene"),
                     "last_updated": props.get("LetzteAktualisierung"),
                     "lat": point.y,

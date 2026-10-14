@@ -5,7 +5,7 @@ from ..clients import geocode, parkapi
 from ..config import DATASET_LICENSES, settings
 from ..geo import compact_dict, haversine_m
 from ..models import LocationInput, ResultEnvelope, source_info
-from .common import freshness, latest_datetime
+from .common import freshness, latest_datetime, limit_value
 
 _GENERIC_NAME_WORDS = {
     "am",
@@ -58,12 +58,25 @@ async def find_parking(
     purpose: str = "CAR",
     only_free: bool = False,
     truck: bool = False,
+    limit: int = 20,
+    cursor: int | None = None,
 ) -> dict[str, Any]:
-    """Find nearby parking with live capacity; truck mode requires truck spaces."""
+    """Find nearby parking with live capacity. Use next_cursor to fetch another page."""
+    bounded_limit = limit_value(limit)
+    if cursor is not None and cursor < 0:
+        raise ValueError("cursor must not be negative")
     resolved = await geocode.resolve(location)
-    records, total = await parkapi.parking_sites(
-        {"lat": resolved.lat, "lon": resolved.lon, "radius": radius_m, "purpose": purpose},
-        settings.max_limit,
+    params = {
+        "lat": resolved.lat,
+        "lon": resolved.lon,
+        "radius": radius_m,
+        "purpose": purpose,
+    }
+    if cursor is not None:
+        params["start"] = cursor
+    records, _total, next_cursor = await parkapi.parking_sites(
+        params,
+        bounded_limit,
     )
     records, duplicates_removed = _deduplicate(records)
     items = []
@@ -104,6 +117,10 @@ async def find_parking(
         warnings.append(f"{stale} of {len(items)} sites do not have current live data")
     if duplicates_removed:
         warnings.append(f"Removed {duplicates_removed} duplicate parking sites")
+    if next_cursor is not None:
+        warnings.append(
+            f"Results are truncated; request the next page with cursor={next_cursor}"
+        )
     for item in items:
         if item.get("free_now", 0) > item.get("capacity", float("inf")):
             warnings.append(
@@ -117,9 +134,12 @@ async def find_parking(
             "purpose": purpose,
             "only_free": only_free,
             "truck": truck,
+            "limit": bounded_limit,
+            "cursor": cursor,
         },
         count=len(items),
-        truncated=total > len(records),
+        truncated=next_cursor is not None,
+        next_cursor=next_cursor,
         items=items,
         source=source_info(
             "gebuendelte-parkdaten-bw",

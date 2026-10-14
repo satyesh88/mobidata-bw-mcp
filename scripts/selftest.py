@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from mobidata_bw_mcp.clients import ckan, geocode, gtfs, parkapi, static_files, wfs
 from mobidata_bw_mcp.models import BBox, Location
+from mobidata_bw_mcp.tools.signs import normalized_code
 
 HEILBRONN = Location(lat=49.1427, lon=9.2069, label="Heilbronn Hbf")
 
@@ -29,7 +30,7 @@ async def check_wfs() -> int:
 
 
 async def check_parkapi() -> int:
-    records, _ = await parkapi.parking_sites(
+    records, _, _ = await parkapi.parking_sites(
         {"lat": HEILBRONN.lat, "lon": HEILBRONN.lon, "radius": 2000}, 1
     )
     return len(records)
@@ -43,6 +44,12 @@ async def check_signs() -> int:
     features = (await static_files.signs()).get("features", [])
     if features and "Verkehrszeichennummer" not in features[0].get("properties", {}):
         raise AssertionError("Traffic-sign schema changed")
+    raw_codes = {
+        feature.get("properties", {}).get("Verkehrszeichennummer")
+        for feature in features
+    }
+    if "DE:277" in raw_codes and normalized_code("DE:277") != "277":
+        raise AssertionError("Traffic-sign code normalization failed")
     return len(features)
 
 

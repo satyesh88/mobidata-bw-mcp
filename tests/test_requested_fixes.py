@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from mobidata_bw_mcp.clients import parkapi
@@ -85,7 +87,7 @@ async def test_health_splits_fresh_stale_and_static_parking(monkeypatch) -> None
     assert item["groups"] == {
         "live_and_fresh": 1,
         "live_capable_but_stale": 1,
-        "static_by_design": 1,
+        "no_live_feed": 1,
     }
     assert item["live_percent"] == 50.0
     assert item["live_percent_basis"] == (
@@ -108,7 +110,7 @@ async def test_health_splits_fresh_stale_and_static_parking(monkeypatch) -> None
         "Heilbronn", "parking", parking_scope="on_street"
     )
     assert on_street["items"][0]["count"] == 1
-    assert on_street["items"][0]["groups"]["static_by_design"] == 1
+    assert on_street["items"][0]["groups"]["no_live_feed"] == 1
 
 
 @pytest.mark.asyncio
@@ -139,6 +141,38 @@ async def test_health_uses_city_code_for_wfs_datasets(monkeypatch) -> None:
     }
 
 
+def test_health_reports_live_age_statistics_and_oldest_site() -> None:
+    now = datetime.now(UTC)
+    records = [
+        {
+            "name": "Five minutes old",
+            "updated": (now - timedelta(minutes=5)).isoformat(),
+        },
+        {
+            "name": "Fifteen minutes old",
+            "updated": (now - timedelta(minutes=15)).isoformat(),
+        },
+        {
+            "name": "One hour old",
+            "updated": (now - timedelta(minutes=60)).isoformat(),
+        },
+        {"name": "No realtime source"},
+    ]
+
+    result = health._classify_records(records, "updated")
+
+    assert result["groups"] == {
+        "live_and_fresh": 2,
+        "live_capable_but_stale": 1,
+        "no_live_feed": 1,
+    }
+    assert result["freshness_threshold_minutes"] == 30
+    assert result["median_age_min"] == pytest.approx(15.0, abs=0.1)
+    assert result["max_age_min"] == pytest.approx(60.0, abs=0.1)
+    assert result["oldest_site"]["name"] == "One hour old"
+    assert result["oldest_site"]["last_updated_at"] == records[2]["updated"]
+
+
 @pytest.mark.asyncio
 async def test_parking_deduplicates_and_warns_without_clamping(monkeypatch) -> None:
     async def fake_resolve(location):
@@ -167,6 +201,7 @@ async def test_parking_deduplicates_and_warns_without_clamping(monkeypatch) -> N
                 },
             ],
             2,
+            None,
         )
 
     monkeypatch.setattr(parking.geocode, "resolve", fake_resolve)
@@ -178,6 +213,33 @@ async def test_parking_deduplicates_and_warns_without_clamping(monkeypatch) -> N
     assert result["items"][0]["free_now"] == 315
     assert any("exceed capacity" in warning for warning in result["warnings"])
     assert any("duplicate" in warning for warning in result["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_parking_exposes_limit_and_next_cursor(monkeypatch) -> None:
+    async def fake_resolve(location):
+        return Location(lat=49.1427, lon=9.2069)
+
+    async def fake_sites(params, limit):
+        assert limit == 200
+        assert params["start"] == 1234
+        return [], 250, 5678
+
+    monkeypatch.setattr(parking.geocode, "resolve", fake_resolve)
+    monkeypatch.setattr(parking.parkapi, "parking_sites", fake_sites)
+
+    result = await parking.find_parking(
+        {"lat": 49.1427, "lon": 9.2069},
+        radius_m=1500,
+        limit=200,
+        cursor=1234,
+    )
+
+    assert result["truncated"] is True
+    assert result["next_cursor"] == 5678
+    assert result["query"]["limit"] == 200
+    assert result["query"]["cursor"] == 1234
+    assert any("truncated" in warning for warning in result["warnings"])
 
 
 @pytest.mark.asyncio
