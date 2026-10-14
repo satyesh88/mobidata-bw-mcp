@@ -10,24 +10,29 @@ from ..models import BBox, LocationInput, ResultEnvelope, source_info
 from .common import latest_datetime, parse_timestamp
 
 
-def active_on(properties: dict[str, Any], active_date: date | None) -> bool:
-    if active_date is None:
+def active_in_range(
+    properties: dict[str, Any], active_from: date | None, active_to: date | None = None
+) -> bool:
+    if active_from is None:
         return True
     start = parse_timestamp(properties.get("starttime"))
     end = parse_timestamp(properties.get("endtime"))
-    return (start is None or start.date() <= active_date) and (
-        end is None or end.date() >= active_date
+    range_end = active_to or active_from
+    return (start is None or start.date() <= range_end) and (
+        end is None or end.date() >= active_from
     )
 
 
 async def selected_roadworks(
-    area: Any, active_date: date | None
+    area: Any, active_from: date | None, active_to: date | None = None
 ) -> list[tuple[dict[str, Any], Any]]:
     payload = await static_files.roadworks()
     selected = []
     for feature in payload.get("features", []):
         geometry = shape(feature["geometry"])
-        if geometry.intersects(area) and active_on(feature["properties"], active_date):
+        if geometry.intersects(area) and active_in_range(
+            feature["properties"], active_from, active_to
+        ):
             selected.append((feature, geometry))
     return selected
 
@@ -37,8 +42,10 @@ async def get_roadworks(
     bbox: BBox | dict[str, Any] | None = None,
     radius_m: int = 5000,
     active_date: date | None = None,
+    active_from: date | None = None,
+    active_to: date | None = None,
 ) -> dict[str, Any]:
-    """Find planned or current roadworks by radius or bbox, optionally active on a date."""
+    """Find roadworks active on a date or during any day in a date range."""
     if location is None and bbox is None:
         raise ValueError("location or bbox is required")
     resolved = await geocode.resolve(location) if location is not None else None
@@ -58,8 +65,13 @@ async def get_roadworks(
             parsed_bbox.max_lon,
             parsed_bbox.max_lat,
         )
-    effective_date = active_date or date.today()
-    records = await selected_roadworks(area, effective_date)
+    if active_date is not None and (active_from is not None or active_to is not None):
+        raise ValueError("active_date cannot be combined with active_from or active_to")
+    effective_from = active_from or active_date or date.today()
+    effective_to = active_to or effective_from
+    if effective_to < effective_from:
+        raise ValueError("active_to must not be before active_from")
+    records = await selected_roadworks(area, effective_from, effective_to)
     items = []
     for feature, geometry in records:
         props = feature["properties"]
@@ -95,7 +107,8 @@ async def get_roadworks(
             "location": resolved.model_dump(exclude_none=True) if resolved else None,
             "bbox": parsed_bbox.model_dump() if parsed_bbox else None,
             "radius_m": radius_m if resolved else None,
-            "active_on": effective_date.isoformat(),
+            "active_from": effective_from.isoformat(),
+            "active_to": effective_to.isoformat(),
         },
         count=len(items),
         items=items,

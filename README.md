@@ -54,6 +54,8 @@ VS Code users can start or debug the included `mobidata-bw` server from `.vscode
 | `search_datasets`, `get_dataset` | Discover datasets, current resources, and licences |
 | `list_layers`, `query_layer` | Explore and query GeoServer WFS layers |
 | `find_parking` | Paginated nearby car, bicycle, or truck parking and live capacity |
+| `find_accessible_parking` | Nearby disabled spaces from ParkAPI plus BFRK station surveys |
+| `stop_accessibility` | Surveyed step-free access, platforms, tactile guidance, lifts, ramps, toilets, and parking |
 | `find_charging` | Nearby chargers by power and current availability |
 | `find_sharing` | Sharing stations and free-floating vehicles |
 | `find_transit`, `get_departures` | Nearby stops and scheduled departures |
@@ -70,6 +72,8 @@ The same metadata as `about` is available at the MCP resource `mobidata://about`
 - Here is tomorrow's synthetic Heilbronn to Bad Rappenau route for a 26 t, 4.0 m truck. Which roadworks or truck restrictions intersect it?
 - How fresh is realtime parking data in Stuttgart or Heilbronn, and which records are stale?
 - Which shared bikes and scooters are available within 1 km of Heilbronn Hbf right now?
+- Which accessible parking spaces are within 1 km of Stuttgart Hbf, and which have live availability?
+- Is Waldenburg Bahnhof step-free, and what are its lift, ramp, platform, and tactile-guidance details?
 - Which chargers of at least 150 kW near Weinsberger Kreuz have a free connector now?
 - Which MobiData datasets cover bicycles, and under which licences?
 
@@ -80,6 +84,8 @@ Sources include the MobiData BW CKAN catalogue, GeoServer WFS, ParkAPI v3, GTFS 
 Important caveats:
 
 - Public transport is scheduled GTFS only, not realtime.
+- BFRK accessibility surveys were collected in different years and may be outdated; inspect the returned survey year. Object coordinates are deliberately offset by about 1.5-4 m.
+- BFRK elevator records describe surveyed infrastructure, not live operating status. DB FaSta status is not queried unless separately configured.
 - Traffic-sign data is not legally binding and municipal coverage varies.
 - Supplementary signs such as `Lieferverkehr frei` are not included, so restrictions may have exceptions.
 - Nominatim geocoding is cached and rate-limited to comply with its public usage policy.

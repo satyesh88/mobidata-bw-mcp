@@ -3,7 +3,7 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 
-from mobidata_bw_mcp.clients import ckan, geocode, gtfs, parkapi, static_files, wfs
+from mobidata_bw_mcp.clients import bfrk, ckan, geocode, gtfs, parkapi, static_files, wfs
 from mobidata_bw_mcp.models import BBox, Location
 from mobidata_bw_mcp.tools.signs import normalized_code
 
@@ -33,6 +33,13 @@ async def check_parkapi() -> int:
     records, _, _ = await parkapi.parking_sites(
         {"lat": HEILBRONN.lat, "lon": HEILBRONN.lon, "radius": 2000}, 1
     )
+    return len(records)
+
+
+async def check_bfrk() -> int:
+    records = await bfrk.table("SPNV", "BFRK_Haltestelle.csv")
+    if records and not {"ID", "HST_DHID", "HST_Name"}.issubset(records[0]):
+        raise AssertionError("BFRK stop schema changed")
     return len(records)
 
 
@@ -82,6 +89,7 @@ async def main() -> None:
         ("CKAN", check_ckan),
         ("WFS axis", check_wfs),
         ("ParkAPI", check_parkapi),
+        ("BFRK", check_bfrk),
         ("Roadworks", check_roadworks),
         ("Signs", check_signs),
         ("GTFS", check_gtfs),

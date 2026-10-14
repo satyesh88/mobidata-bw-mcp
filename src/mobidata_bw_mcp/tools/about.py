@@ -13,6 +13,7 @@ def about() -> dict[str, Any]:
             "MobiData BW CKAN catalogue",
             "MobiData BW GeoServer WFS",
             "ParkAPI v3",
+            "BFRK accessibility surveys for Baden-Württemberg stops and stations",
             "GTFS PostgREST",
             "MobiData BW roadworks and traffic-sign GeoJSON exports",
             "OpenStreetMap Nominatim geocoding",
@@ -20,6 +21,8 @@ def about() -> dict[str, Any]:
         "licences": "Vary by dataset; each result includes source and attribution.",
         "caveats": [
             "Scheduled public transport only; no GTFS realtime data.",
+            "BFRK surveys may be outdated, coordinates are offset 1.5-4 m, "
+            "and elevator details are not live status.",
             "Traffic-sign results are not legally binding and omit supplementary signs.",
             "This independent project is not affiliated with or endorsed by NVBW.",
         ],

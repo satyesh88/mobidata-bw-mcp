@@ -10,6 +10,26 @@ from .common import parse_timestamp
 FRESHNESS_THRESHOLD_MINUTES = 30
 
 
+def _accessibility_coverage(records: list[dict[str, Any]]) -> dict[str, Any]:
+    site_count = len(records)
+    capacity_count = sum(record.get("capacity_disabled") is not None for record in records)
+    live_free_count = sum(
+        record.get("realtime_free_capacity_disabled") is not None for record in records
+    )
+    return {
+        "site_count": site_count,
+        "with_disabled_capacity_count": capacity_count,
+        "with_disabled_capacity_percent": (
+            round(capacity_count * 100 / site_count, 1) if site_count else None
+        ),
+        "with_live_disabled_free_count": live_free_count,
+        "with_live_disabled_free_percent": (
+            round(live_free_count * 100 / site_count, 1) if site_count else None
+        ),
+        "percent_basis": "matching records / all parking sites after scope filtering",
+    }
+
+
 def _classify_records(
     records: list[dict[str, Any]], timestamp_field: str
 ) -> dict[str, Any]:
@@ -135,6 +155,7 @@ async def _parking_health(
             "on_street": on_street_count,
         },
         "area_used": area_used,
+        "accessibility_coverage": _accessibility_coverage(records),
         **_classify_records(records, "realtime_data_updated_at"),
         "top_regions": Counter(
             record.get("official_region_code") for record in records

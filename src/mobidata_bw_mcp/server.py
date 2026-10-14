@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .models import BBox, LocationInput, RoutePoint, Vehicle
 from .tools import (
+    accessibility,
     charging,
     discovery,
     health,
@@ -43,6 +44,8 @@ def create_server(*, port: int = 8000) -> FastMCP:
     mcp.tool()(discovery.list_layers)
     mcp.tool()(spatial.query_layer)
     mcp.tool()(parking.find_parking)
+    mcp.tool()(accessibility.find_accessible_parking)
+    mcp.tool()(accessibility.stop_accessibility)
     mcp.tool()(charging.find_charging)
     mcp.tool()(sharing.find_sharing)
     mcp.tool()(transit.find_transit)
@@ -63,9 +66,13 @@ def create_server(*, port: int = 8000) -> FastMCP:
         bbox: BBox | dict[str, Any] | None = None,
         radius_m: int = 5000,
         active_on: date | None = None,
+        active_from: date | None = None,
+        active_to: date | None = None,
     ) -> dict[str, Any]:
-        """Find planned or current roadworks by radius or bbox, optionally active on a date."""
-        return await roadworks.get_roadworks(location, bbox, radius_m, active_on)
+        """Find roadworks active on a date or during any day in a date range."""
+        return await roadworks.get_roadworks(
+            location, bbox, radius_m, active_on, active_from, active_to
+        )
 
     mcp.tool()(signs.find_traffic_signs)
 

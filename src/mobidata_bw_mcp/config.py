@@ -24,6 +24,7 @@ class Settings:
     signs_ttl: int = 86400
     geocode_ttl: int = 604800
     ckan_ttl: int = 3600
+    bfrk_ttl: int = 86400
     default_limit: int = 20
     max_limit: int = 200
 
@@ -52,4 +53,5 @@ DATASET_LICENSES = {
     "roadworks": "Datenlizenz Deutschland - Namensnennung - Version 2.0",
     "signs": "Datenlizenz Deutschland - Namensnennung - Version 2.0",
     "gtfs": "CC BY 4.0",
+    "bfrk": "Datenlizenz Deutschland Namensnennung 2.0",
 }
