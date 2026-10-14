@@ -24,6 +24,8 @@ async def test_joined_stop_uses_stop_id_and_hst_dhid(monkeypatch: pytest.MonkeyP
 
     result = await bfrk.joined_stop("SPNV", "de:08126:11951")
 
+    assert result["Haltestelle"]["ID"].startswith("ID: de:08126:11951")
+    assert result["Haltestelle"]["HST_DHID"] == "de:08126:11951"
     assert result["Haltestelle"]["HST_Name"] == "Waldenburg Bahnhof"
     assert result["Rampe"][0]["Laengsneigung_prozent"] == "5,987"
 

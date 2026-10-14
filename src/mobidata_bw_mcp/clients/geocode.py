@@ -50,6 +50,12 @@ _GAZETTEER = {
     ),
 }
 for _alias in (
+    "weinsberger kreuz a6/a81",
+    "weinsberger kreuz a 6/a 81",
+    "kreuz weinsberg a6/a81",
+):
+    _GAZETTEER[_alias] = _GAZETTEER["weinsberger kreuz"]
+for _alias in (
     "heilbronn city center",
     "heilbronn innenstadt",
     "heilbronner innenstadt",

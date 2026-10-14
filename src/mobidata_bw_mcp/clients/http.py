@@ -28,13 +28,20 @@ class HttpClient:
         url: str,
         *,
         params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        json_body: Any | None = None,
         timeout: float | None = None,
     ) -> httpx.Response:
         async with self._semaphore:
             for attempt in range(2):
                 try:
                     response = await self._client.request(
-                        method, url, params=params, timeout=timeout or settings.timeout_seconds
+                        method,
+                        url,
+                        params=params,
+                        headers=headers,
+                        json=json_body,
+                        timeout=timeout or settings.timeout_seconds,
                     )
                     response.raise_for_status()
                     return response

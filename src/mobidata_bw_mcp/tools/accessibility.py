@@ -1,4 +1,5 @@
 import asyncio
+import re
 from datetime import datetime
 from typing import Any
 
@@ -192,19 +193,44 @@ async def _all_stops() -> list[tuple[str, dict[str, str]]]:
     ]
 
 
+def _normalized_stop_text(value: str) -> str:
+    normalized = re.sub(r"\bhbf\b", "hauptbahnhof", value.casefold())
+    return " ".join(re.findall(r"[a-z0-9äöüß]+", normalized))
+
+
+def _stop_search_text(row: dict[str, str]) -> str:
+    return _normalized_stop_text(
+        " ".join(
+            filter(
+                None,
+                (row.get("HST_Name"), row.get("Gemeinde"), row.get("Ortsteil")),
+            )
+        )
+    )
+
+
 async def _select_stop(
     stop_or_location: LocationInput | dict[str, Any],
 ) -> tuple[str, dict[str, str], float | None]:
     stops = await _all_stops()
     if isinstance(stop_or_location, str):
-        query = stop_or_location.strip().casefold()
-        matches = [item for item in stops if query in item[1].get("HST_Name", "").casefold()]
+        query = _normalized_stop_text(stop_or_location)
+        query_tokens = set(query.split())
+        matches = [
+            item
+            for item in stops
+            if query_tokens <= set(_stop_search_text(item[1]).split())
+        ]
         if matches:
-            exact = next(
-                (item for item in matches if item[1].get("HST_Name", "").casefold() == query),
-                None,
+            station_query = bool({"hauptbahnhof", "bahnhof"} & query_tokens)
+            mode, row = min(
+                matches,
+                key=lambda item: (
+                    0 if station_query and item[0] == "SPNV" else 1,
+                    0 if _normalized_stop_text(item[1].get("HST_Name", "")) == query else 1,
+                    len(set(_stop_search_text(item[1]).split()) - query_tokens),
+                ),
             )
-            mode, row = exact or matches[0]
             return mode, row, None
     resolved = await geocode.resolve(stop_or_location)
     mode, row = min(

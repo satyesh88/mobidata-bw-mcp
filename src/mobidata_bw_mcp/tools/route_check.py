@@ -3,6 +3,7 @@ from typing import Any
 
 from shapely.geometry import box
 
+from ..clients import routing
 from ..config import DATASET_LICENSES, settings
 from ..geo import (
     compact_dict,
@@ -36,13 +37,23 @@ async def check_route(
         raise ValueError("buffer_m must be between 1 and 1000")
     vehicle_model = Vehicle.model_validate(vehicle) if vehicle else None
     effective_date = date_value or date.today()
+    route_source = "provided_geometry"
+    if approximated:
+        routed_line = await routing.driving_hgv_line(route)
+        if routed_line is not None:
+            line = routed_line
+            approximated = False
+            route_source = "openrouteservice_driving_hgv"
+        else:
+            route_source = "straight_line_waypoints"
+    effective_buffer_m = max(buffer_m, 500) if approximated else buffer_m
     min_lon, min_lat, max_lon, max_lat = line.bounds
-    margin = buffer_m / 80_000
+    margin = effective_buffer_m / 80_000
     geographic_area = box(
         min_lon - margin, min_lat - margin, max_lon + margin, max_lat + margin
     )
     center = line.centroid
-    buffered_route, local_route = route_buffer_m(line, buffer_m)
+    buffered_route, local_route = route_buffer_m(line, effective_buffer_m)
     roadworks = await selected_roadworks(geographic_area, effective_date)
     signs = await selected_signs(geographic_area, TRUCK_CODES)
     issues = []
@@ -50,6 +61,7 @@ async def check_route(
         local_geometry = to_local_meters(geometry, center.y, center.x)
         if not local_geometry.intersects(buffered_route):
             continue
+        distance_to_route_m = local_geometry.distance(local_route)
         props = feature["properties"]
         issues.append(
             compact_dict(
@@ -58,6 +70,10 @@ async def check_route(
                         distance_along_route_km(local_route, local_geometry), 2
                     ),
                     "kind": "roadwork",
+                    "route_relation": (
+                        "on_route" if distance_to_route_m <= buffer_m else "near_route"
+                    ),
+                    "distance_to_route_m": round(distance_to_route_m),
                     "severity": "high" if props.get("type") == "ROAD_CLOSED" else "warning",
                     "type": props.get("type"),
                     "subtype": props.get("subtype"),
@@ -73,6 +89,7 @@ async def check_route(
         local_point = to_local_meters(point, center.y, center.x)
         if not local_point.intersects(buffered_route):
             continue
+        distance_to_route_m = local_point.distance(local_route)
         raw_code = feature["properties"].get("Verkehrszeichennummer")
         code = normalized_code(raw_code)
         limit_value = sign_value(raw_code)
@@ -88,6 +105,10 @@ async def check_route(
                         distance_along_route_km(local_route, local_point), 2
                     ),
                     "kind": "traffic_sign",
+                    "route_relation": (
+                        "on_route" if distance_to_route_m <= buffer_m else "near_route"
+                    ),
+                    "distance_to_route_m": round(distance_to_route_m),
                     "severity": "critical" if exceeded else "warning",
                     "sign_code": code,
                     "description": SIGN_MEANINGS.get(code, raw_code),
@@ -102,7 +123,12 @@ async def check_route(
     roadwork_count = sum(item["kind"] == "roadwork" for item in issues)
     sign_count = len(issues) - roadwork_count
     exceeded_count = sum(bool(item.get("vehicle_exceeds_limit")) for item in issues)
-    summary = f"{roadwork_count} roadworks and {sign_count} truck-relevant signs along route"
+    on_route_count = sum(item["route_relation"] == "on_route" for item in issues)
+    near_route_count = len(issues) - on_route_count
+    summary = (
+        f"{on_route_count} findings on the route and {near_route_count} near the route "
+        f"({roadwork_count} roadworks, {sign_count} truck-relevant signs)"
+    )
     if exceeded_count:
         summary += f"; vehicle exceeds {exceeded_count} explicit limits"
     warnings = list(SIGN_CAVEATS)
@@ -111,6 +137,8 @@ async def check_route(
     return ResultEnvelope(
         query={
             "buffer_m": buffer_m,
+            "effective_buffer_m": effective_buffer_m,
+            "route_source": route_source,
             "date": effective_date.isoformat(),
             "vehicle": vehicle_model.model_dump(exclude_none=True) if vehicle_model else None,
             "route_length_km": round(local_route.length / 1000, 2),

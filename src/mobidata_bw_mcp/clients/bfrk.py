@@ -56,11 +56,7 @@ async def table(mode: str, filename: str) -> list[dict[str, str]]:
 async def joined_stop(mode: str, stop_id: str) -> dict[str, Any]:
     stop_rows = await table(mode, "BFRK_Haltestelle.csv")
     stop = next(
-        (
-            row
-            for row in stop_rows
-            if (row.get("ID") or row.get("HST_DHID")) == stop_id
-        ),
+        (row for row in stop_rows if row.get("HST_DHID") == stop_id),
         None,
     )
     if stop is None:

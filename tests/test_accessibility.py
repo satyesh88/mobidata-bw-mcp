@@ -123,3 +123,42 @@ async def test_stop_accessibility_returns_measured_summary_and_caveats(
     assert item["elevators"][0]["db_fasta_id"] == "1234"
     assert item["disabled_parking_spaces"] == 2
     assert any("not live operational status" in warning for warning in result["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_stop_selection_normalizes_hbf_and_prefers_spnv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stops = [
+        (
+            "OEPNV",
+            {
+                "HST_DHID": "bus:1",
+                "HST_Name": "Hauptbahnhof Bussteig",
+                "Gemeinde": "Heilbronn",
+                "Latitude": "49,1",
+                "Longitude": "9,2",
+            },
+        ),
+        (
+            "SPNV",
+            {
+                "HST_DHID": "rail:1",
+                "HST_Name": "Hauptbahnhof / Willy-Brandt-Platz",
+                "Gemeinde": "Heilbronn",
+                "Latitude": "49,1",
+                "Longitude": "9,2",
+            },
+        ),
+    ]
+
+    async def fake_stops() -> list[tuple[str, dict[str, str]]]:
+        return stops
+
+    monkeypatch.setattr(accessibility, "_all_stops", fake_stops)
+
+    mode, stop, distance = await accessibility._select_stop("Heilbronn Hbf")
+
+    assert mode == "SPNV"
+    assert stop["HST_DHID"] == "rail:1"
+    assert distance is None

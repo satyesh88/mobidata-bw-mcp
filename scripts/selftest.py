@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from mobidata_bw_mcp.clients import bfrk, ckan, geocode, gtfs, parkapi, static_files, wfs
 from mobidata_bw_mcp.models import BBox, Location
+from mobidata_bw_mcp.tools.accessibility import stop_accessibility
 from mobidata_bw_mcp.tools.signs import normalized_code
 
 HEILBRONN = Location(lat=49.1427, lon=9.2069, label="Heilbronn Hbf")
@@ -41,6 +42,16 @@ async def check_bfrk() -> int:
     if records and not {"ID", "HST_DHID", "HST_Name"}.issubset(records[0]):
         raise AssertionError("BFRK stop schema changed")
     return len(records)
+
+
+async def check_bfrk_accessibility() -> int:
+    results = await asyncio.gather(
+        stop_accessibility("Heilbronn Hbf"),
+        stop_accessibility("Heilbronn Harmonie/Kunsthalle"),
+    )
+    if not all(result.get("items") for result in results):
+        raise AssertionError("BFRK accessibility lookup returned no data")
+    return len(results)
 
 
 async def check_roadworks() -> int:
@@ -90,6 +101,7 @@ async def main() -> None:
         ("WFS axis", check_wfs),
         ("ParkAPI", check_parkapi),
         ("BFRK", check_bfrk),
+        ("BFRK stops", check_bfrk_accessibility),
         ("Roadworks", check_roadworks),
         ("Signs", check_signs),
         ("GTFS", check_gtfs),
