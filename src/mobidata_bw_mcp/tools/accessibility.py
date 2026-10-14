@@ -241,14 +241,64 @@ async def _select_stop(
     return mode, row, haversine_m(resolved.lat, resolved.lon, *coordinates)
 
 
-def _step_free(joined: dict[str, Any]) -> str:
-    accessible_evidence = bool(joined["Aufzug"] or joined["Rampe"])
-    obstacle_evidence = bool(joined["Treppe"] or joined["Engstelle"])
-    if accessible_evidence and not obstacle_evidence:
-        return "yes"
-    if obstacle_evidence and not accessible_evidence:
-        return "no"
-    return "unknown"
+def _platform_identifiers(platform: dict[str, str]) -> set[str]:
+    name = platform.get("STEIG_Name", "")
+    identifiers = set(re.findall(r"\d+", name))
+    if identifiers:
+        return identifiers
+    parts = platform.get("ID", "").split(":")
+    return {parts[-1]} if parts and parts[-1].isdigit() else set()
+
+
+def _connection_identifiers(row: dict[str, str]) -> set[str]:
+    identifiers = set()
+    connection = row.get("Verbindungsfunktion", "")
+    for match in re.finditer(
+        r"(?:gl(?:eis)?|bstg|bahnsteig)\s*(\d+(?:\s*/\s*\d+)*)",
+        connection,
+        re.IGNORECASE,
+    ):
+        identifiers.update(re.findall(r"\d+", match.group(1)))
+    return identifiers
+
+
+def _platform_access(joined: dict[str, Any]) -> list[dict[str, Any]]:
+    accessible_connections = joined["Aufzug"] + joined["Rampe"]
+    results = []
+    for platform in joined["Haltesteig"]:
+        identifiers = _platform_identifiers(platform)
+        accessible = bool(
+            identifiers
+            and any(
+                identifiers & _connection_identifiers(connection)
+                for connection in accessible_connections
+            )
+        )
+        stairs_only = bool(
+            identifiers
+            and any(
+                identifiers & _connection_identifiers(connection)
+                for connection in joined["Treppe"]
+            )
+        )
+        status = "yes" if accessible else "no" if stairs_only else "unknown"
+        results.append(
+            {
+                "platform": platform.get("STEIG_Name") or platform.get("ID"),
+                "platform_id": platform.get("ID"),
+                "step_free": status,
+            }
+        )
+    return results
+
+
+def _step_free_summary(platform_access: list[dict[str, Any]]) -> tuple[str, str]:
+    statuses = [item["step_free"] for item in platform_access]
+    if statuses and all(status == "yes" for status in statuses):
+        return "yes", "Every surveyed platform has matching elevator or ramp access."
+    if any(status == "no" for status in statuses):
+        return "no", "At least one surveyed platform has only matching stair access."
+    return "unknown", "Not every surveyed platform has conclusive access-path evidence."
 
 
 async def stop_accessibility(
@@ -259,6 +309,8 @@ async def stop_accessibility(
     stop_id = stop.get("HST_DHID") or stop["ID"]
     joined = await bfrk.joined_stop(mode, stop_id)
     platforms = joined["Haltesteig"]
+    platform_access = _platform_access(joined)
+    step_free, step_free_basis = _step_free_summary(platform_access)
     dates = [
         row.get("Erfassungsdatum")
         for value in joined.values()
@@ -275,7 +327,9 @@ async def stop_accessibility(
             "lat": coordinates[0] if coordinates else None,
             "lon": coordinates[1] if coordinates else None,
             "distance_m": round(distance) if distance is not None else None,
-            "step_free": _step_free(joined),
+            "step_free": step_free,
+            "step_free_basis": step_free_basis,
+            "platform_access": platform_access,
             "platform_or_curb_heights_cm": sorted(
                 {
                     value
@@ -321,10 +375,26 @@ async def stop_accessibility(
             "wheelchair_toilets": [
                 compact_dict(
                     {
-                        "wheelchair_accessible": row.get("rollstuhltauglichAlle")
-                        or row.get("rollstuhltauglich"),
-                        "euro_key": row.get("SchluesselEurokey"),
+                        "description": (
+                            "accessible toilet (Euroschlüssel needed)"
+                            if row.get("SchluesselEurokey") == "ja"
+                            else "toilet"
+                        ),
+                        "wheelchair_accessible": (
+                            "yes"
+                            if row.get("SchluesselEurokey") == "ja"
+                            else row.get("rollstuhltauglichAlle")
+                            or row.get("rollstuhltauglich")
+                        ),
+                        "euro_key_needed": row.get("SchluesselEurokey") == "ja",
                         "opening_hours": row.get("Oeffnungszeiten"),
+                        "source_fields": {
+                            "rollstuhltauglich": row.get("rollstuhltauglich"),
+                            "rollstuhltauglichAlle": row.get(
+                                "rollstuhltauglichAlle"
+                            ),
+                            "SchluesselEurokey": row.get("SchluesselEurokey"),
+                        },
                     }
                 )
                 for row in joined["Toilette"]

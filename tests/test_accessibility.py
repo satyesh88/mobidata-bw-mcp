@@ -83,7 +83,7 @@ async def test_stop_accessibility_returns_measured_summary_and_caveats(
         "Haltesteig": [
             {
                 "ID": "platform-1",
-                "STEIG_Name": "1",
+                "STEIG_Name": "Gleis 1",
                 "Steighoehe_cm": "55,0",
                 "Bodind_Leitstreifen": "ja",
                 "Erfassungsdatum": "01.06.2024",
@@ -96,10 +96,17 @@ async def test_stop_accessibility_returns_measured_summary_and_caveats(
                 "Kabinenbreite_cm": "110",
                 "Kabinenlaenge_cm": "210",
                 "DB-FaSta-ID": "1234",
+                "Verbindungsfunktion": "Unterführung zu Gleis 1",
             }
         ],
         "Rampe": [],
-        "Toilette": [{"rollstuhltauglichAlle": "ja"}],
+        "Toilette": [
+            {
+                "rollstuhltauglichAlle": "nein",
+                "rollstuhltauglich": "nein",
+                "SchluesselEurokey": "ja",
+            }
+        ],
         "Treppe": [],
         "Engstelle": [],
         "Parkplatz": [{"Stellplatzanzahl_Behinderte": "2"}],
@@ -119,10 +126,68 @@ async def test_stop_accessibility_returns_measured_summary_and_caveats(
     item = result["items"][0]
 
     assert item["step_free"] == "yes"
+    assert item["platform_access"] == [
+        {
+            "platform": "Gleis 1",
+            "platform_id": "platform-1",
+            "step_free": "yes",
+        }
+    ]
+    assert item["step_free_basis"] == (
+        "Every surveyed platform has matching elevator or ramp access."
+    )
     assert item["platform_or_curb_heights_cm"] == [55.0]
     assert item["elevators"][0]["db_fasta_id"] == "1234"
     assert item["disabled_parking_spaces"] == 2
+    assert item["wheelchair_toilets"][0] == {
+        "description": "accessible toilet (Euroschlüssel needed)",
+        "wheelchair_accessible": "yes",
+        "euro_key_needed": True,
+        "source_fields": {
+            "rollstuhltauglich": "nein",
+            "rollstuhltauglichAlle": "nein",
+            "SchluesselEurokey": "ja",
+        },
+    }
     assert any("not live operational status" in warning for warning in result["warnings"])
+
+
+def test_step_free_is_no_only_for_platform_with_stairs_and_no_accessible_path() -> None:
+    joined = {
+        "Haltesteig": [
+            {"ID": "platform-1", "STEIG_Name": "Gleis 1"},
+            {"ID": "platform-2", "STEIG_Name": "Gleis 2"},
+        ],
+        "Aufzug": [{"Verbindungsfunktion": "Unterführung zu Gleis 1"}],
+        "Rampe": [{"Verbindungsfunktion": "Neigung eigentlich 29,2"}],
+        "Treppe": [
+            {"Verbindungsfunktion": "Nebenausgang"},
+            {"Verbindungsfunktion": "Unterführung zu Gleis 2"},
+        ],
+    }
+
+    platforms = accessibility._platform_access(joined)
+    status, basis = accessibility._step_free_summary(platforms)
+
+    assert [platform["step_free"] for platform in platforms] == ["yes", "no"]
+    assert status == "no"
+    assert basis == "At least one surveyed platform has only matching stair access."
+
+
+def test_step_free_is_unknown_when_platform_path_evidence_is_missing() -> None:
+    joined = {
+        "Haltesteig": [{"ID": "platform-8", "STEIG_Name": "Gleis 8"}],
+        "Aufzug": [],
+        "Rampe": [],
+        "Treppe": [{"Verbindungsfunktion": "Bahnhofsgebäude zum Vorplatz"}],
+    }
+
+    platforms = accessibility._platform_access(joined)
+    status, basis = accessibility._step_free_summary(platforms)
+
+    assert platforms[0]["step_free"] == "unknown"
+    assert status == "unknown"
+    assert basis == "Not every surveyed platform has conclusive access-path evidence."
 
 
 @pytest.mark.asyncio
