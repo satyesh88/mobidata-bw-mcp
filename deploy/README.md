@@ -162,10 +162,11 @@ Claude Code:
 claude mcp add --transport http mobidata https://<DOMAIN>/mcp --header "Authorization: Bearer <KEY>"
 ```
 
-Claude custom connectors (claude.ai and Claude Desktop): add `https://<DOMAIN>/mcp` as the connector URL.
-Whether a client lets you send a static `Authorization` header depends on its version. If it only offers
-OAuth, use a client that supports headers (Claude Code above, or a bridge such as `mcp-remote` with
-`--header "Authorization: Bearer <KEY>"`).
+Claude custom connectors (claude.ai, Claude Desktop and the phone apps): add `https://<DOMAIN>/mcp`, choose
+"No sign-in" and add the request header `Authorization` with the value `Bearer <KEY>`. Request headers are
+a beta feature limited to some organizations (see Anthropic's "Add a connector that isn't in the directory").
+The endpoint must be reachable from the public internet, because Claude's servers connect to it. A bridge
+such as `mcp-remote` with `--header "Authorization:Bearer <KEY>"` covers clients that only run local servers.
 
 Python MCP client:
 

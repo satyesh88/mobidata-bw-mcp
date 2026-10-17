@@ -2,7 +2,7 @@
 
 Your data, one standard interface, usable by any AI agent.
 
-This open-source [Model Context Protocol](https://modelcontextprotocol.io/) server gives Claude Desktop, Cursor, Claude Code, and custom agents a consistent interface to public mobility data from [MobiData BW](https://mobidata-bw.de/). It combines live parking, charging and sharing status, roadworks, traffic signs, scheduled transit, catalogue discovery, and route-level computation.
+This open-source [Model Context Protocol](https://modelcontextprotocol.io/) server gives Claude, Cursor, VS Code, Claude Code, the OpenAI and Anthropic APIs, chat bots, apps, and custom agents a consistent interface to public mobility data from [MobiData BW](https://mobidata-bw.de/). It combines live parking, charging and sharing status, roadworks, traffic signs, scheduled transit, catalogue discovery, and route-level computation.
 
 > This independent project is not affiliated with or endorsed by NVBW or MobiData BW.
 
@@ -19,7 +19,7 @@ uv sync
 uv run mobidata-bw-mcp
 ```
 
-Streamable HTTP (`--transport http`) requires an API key (see [deploy/README.md](deploy/README.md), which also covers the Docker deployment); use `--insecure-no-auth` for local testing only. Ask NVBW about fair use before publicly hosting it.
+For a hosted endpoint (Streamable HTTP with an API key), the Telegram or WhatsApp bots, ChatGPT, mobile apps and other clients, see [Hosted server and other clients](#hosted-server-and-other-clients) below.
 
 ### Claude Desktop
 
@@ -46,6 +46,191 @@ claude mcp add mobidata-bw -- uv --directory /path/to/mobidata-bw-mcp run mobida
 ```
 
 VS Code users can start or debug the included `mobidata-bw` server from `.vscode/mcp.json`.
+
+## Hosted server and other clients
+
+The server speaks MCP, so any MCP client can use it. There are two ways to connect:
+
+| | Local (stdio) | Hosted (Streamable HTTP) |
+|---|---|---|
+| How | The client starts the server on your machine (see [Install](#install)) | The client calls `https://<DOMAIN>/mcp` |
+| Needs | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | A running instance and an API key |
+| Auth | None | `Authorization: Bearer <KEY>` |
+| Best for | Claude Desktop, Cursor, VS Code, Claude Code on your own computer | Claude on the web and phone, cloud agents, bots, apps, teammates |
+
+There is no public instance with open keys. To get a hosted endpoint, [run your own](deploy/README.md) (a small server is enough; updates are in [deploy/UPDATING.md](deploy/UPDATING.md)) or ask the operator of an instance for a key. Ask NVBW about fair use before hosting it for the public. Use `--insecure-no-auth` only for local testing.
+
+Examples below use `https://<DOMAIN>/mcp` and a key in `MOBIDATA_MCP_KEY`. Only the Python client example was run against this server. The others follow the vendors' documentation, so test them with your account and check the vendor's current docs if a setting has moved.
+
+### Claude on the web, desktop and phone (custom connector)
+
+1. Open Customize, then Connectors, then Add custom connector.
+2. Enter `https://<DOMAIN>/mcp` as the URL and choose "No sign-in" for Authentication.
+3. Under Request headers add `Authorization` with the value `Bearer <KEY>` (include the word `Bearer` and the space).
+4. Turn the connector on per chat from the + menu.
+
+Claude's servers connect to your endpoint, so it must be reachable from the public internet. Request headers are a beta feature that is limited to some organizations; if the section is missing, your organization does not have it yet. See Anthropic's guide [Add a connector that isn't in the directory](https://claude.com/docs/connectors/custom/add-unlisted).
+
+### Claude Code
+
+```bash
+claude mcp add --transport http mobidata-bw https://<DOMAIN>/mcp --header "Authorization: Bearer <KEY>"
+claude mcp list
+```
+
+### Cursor and VS Code
+
+Cursor, in `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
+
+```json
+{
+  "mcpServers": {
+    "mobidata-bw": {
+      "url": "https://<DOMAIN>/mcp",
+      "headers": { "Authorization": "Bearer <KEY>" }
+    }
+  }
+}
+```
+
+VS Code, in `.vscode/mcp.json`, asking for the key instead of storing it:
+
+```json
+{
+  "servers": {
+    "mobidata-bw": {
+      "type": "http",
+      "url": "https://<DOMAIN>/mcp",
+      "headers": { "Authorization": "Bearer ${input:mobidata-key}" }
+    }
+  },
+  "inputs": [
+    { "type": "promptString", "id": "mobidata-key", "description": "MobiData MCP key", "password": true }
+  ]
+}
+```
+
+### Clients that only support local (stdio) servers
+
+Bridge to the hosted server with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
+
+```json
+{
+  "mcpServers": {
+    "mobidata-bw": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://<DOMAIN>/mcp", "--header", "Authorization:${MOBIDATA_AUTH}"],
+      "env": { "MOBIDATA_AUTH": "Bearer <KEY>" }
+    }
+  }
+}
+```
+
+### ChatGPT and the OpenAI API
+
+OpenAI's models can call remote MCP servers from the Responses API:
+
+```python
+import os
+from openai import OpenAI
+
+resp = OpenAI().responses.create(
+    model="<MODEL>",
+    tools=[{
+        "type": "mcp",
+        "server_label": "mobidata_bw",
+        "server_url": "https://<DOMAIN>/mcp",
+        "authorization": os.environ["MOBIDATA_MCP_KEY"],
+        "require_approval": "never",
+    }],
+    input="Where can I park near Stuttgart Hauptbahnhof right now?",
+)
+print(resp.output_text)
+```
+
+The `authorization` field is documented as an OAuth token that is sent as a bearer token; this server accepts any key issued by `deploy/new-api-key.py` in that position.
+
+In the ChatGPT app (Plugins, Add custom MCP server), OpenAI's documentation describes OAuth sign-in for custom servers. A static API key is not documented there, so this API-key server is not a drop-in for the ChatGPT app today. Use the API as above, or put an OAuth-capable gateway in front.
+
+### Anthropic API
+
+```python
+import os
+import anthropic
+
+response = anthropic.Anthropic().beta.messages.create(
+    model="<MODEL>",
+    max_tokens=1024,
+    betas=["mcp-client-2025-11-20"],
+    mcp_servers=[{
+        "type": "url",
+        "url": "https://<DOMAIN>/mcp",
+        "name": "mobidata-bw",
+        "authorization_token": os.environ["MOBIDATA_MCP_KEY"],
+    }],
+    tools=[{"type": "mcp_toolset", "mcp_server_name": "mobidata-bw"}],
+    messages=[{"role": "user", "content": "Which chargers near Weinsberger Kreuz are free now?"}],
+)
+print(response.content)
+```
+
+The MCP connector supports tool calls only and needs a public HTTPS URL.
+
+### Your own Python agent
+
+```python
+import asyncio, os
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+HEADERS = {"Authorization": f"Bearer {os.environ['MOBIDATA_MCP_KEY']}"}
+
+async def main():
+    async with streamablehttp_client("https://<DOMAIN>/mcp", headers=HEADERS) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(
+                "find_parking", {"location": "Stuttgart Hauptbahnhof", "limit": 3}
+            )
+            print(result.content[0].text)
+
+asyncio.run(main())
+```
+
+For LangGraph or LangChain, [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) loads the tools from the same URL and header; see [deploy/README.md](deploy/README.md). Any MCP SDK (TypeScript, Java, Kotlin, C#, Swift, Go, Rust, Ruby, PHP) works the same way: Streamable HTTP, URL above, one `Authorization` header.
+
+### Telegram bot
+
+The repository contains a Telegram bot (`src/mobidata_bw_mcp/telegram_bot`) that answers mobility questions with Claude and this server's tools, sends navigation buttons and a location pin, and enforces per-user and daily-budget limits.
+
+```bash
+uv sync --extra telegram
+cp .env.example .env            # set TELEGRAM_BOT_TOKEN and ANTHROPIC_API_KEY
+./run-telegram.sh               # starts its own local MCP server (stdio)
+```
+
+To make it use a hosted server instead, set `MCP_SERVER_URL=https://<DOMAIN>/mcp` (or `http://127.0.0.1:8765/mcp` on the same host) and `MCP_SERVER_KEY` in `.env`. Running it as a service is covered in [deploy/README.md](deploy/README.md#telegram-bot-optional). Keep one running copy per bot token.
+
+### WhatsApp bot
+
+WhatsApp has no MCP support of its own, so a bot is a small web service between WhatsApp and the model. The agent loop in the Telegram bot (`MobilityAgent` and `MCPBridge`) does not depend on Telegram, so it can be reused:
+
+1. Register a number with the WhatsApp Business Cloud API and point its webhook at your service.
+2. For each incoming text, call `await agent.answer(text, history)` (create `MCPBridge()` once and `await bridge.start()`; set `MCP_SERVER_URL` and `MCP_SERVER_KEY` for a hosted server).
+3. Send `answer.text` back with the Cloud API's send-message call. Adapt the channel rules in the system prompt and format for WhatsApp (plain text, `*bold*`).
+
+This is a sketch, not a shipped feature. Check Meta's current WhatsApp Business messaging and AI-assistant policies before launching.
+
+### iOS and Android
+
+- **Claude app:** add the custom connector above on the web; Claude's servers make the connection, so it also works when you chat from the phone app.
+- **Your own app:** never put the API key in the app. Let the app call your own backend, which holds the key and talks to the MCP server (as the bots do). An official MCP SDK for Swift or Kotlin is an option when you control the key distribution.
+
+### Key handling
+
+- Give each client or person its own key (`python3 deploy/new-api-key.py <NAME> --owner <service user>`), so one can be revoked without affecting the others. Revoke by deleting the line in `/etc/mobidata-mcp/keys`; no restart is needed.
+- The server limits each key to 60 requests a minute and the whole server to 600, and logs only the key name, MCP method, tool and status, not requests or locations.
+- Treat a key like a password: environment variables or a secret store, never in Git, screenshots, client-side code or chat.
 
 ## Tools
 
