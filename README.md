@@ -173,6 +173,8 @@ The MCP server gives an agent the **tools**. The skill teaches it **how to use t
 
 The skill only helps when the MCP server (hosted or local) is also connected.
 
+**Easiest:** download [mobidata-bw.zip](https://github.com/satyesh88/mobidata-bw-mcp/releases/latest/download/mobidata-bw.zip) and upload it under **Customize → Skills → + → Upload a skill**.
+
 ### Claude (web and desktop): no terminal needed
 
 1. Turn on **Settings → Capabilities → Code execution and file creation**.
@@ -184,7 +186,17 @@ More detail: [Use skills in Claude](https://support.claude.com/en/articles/12512
 
 ### Claude Code
 
-macOS / Linux:
+Unzip [mobidata-bw.zip](https://github.com/satyesh88/mobidata-bw-mcp/releases/latest/download/mobidata-bw.zip) into `~/.claude/skills/` (you get `~/.claude/skills/mobidata-bw/SKILL.md`), or use the commands under [Build it yourself](#build-it-yourself). To use it in only one project, put it in `.claude/skills/mobidata-bw/SKILL.md` inside that project instead.
+
+### Your own agent (any model)
+
+Add the text of [`skill/SKILL.md`](skill/SKILL.md) to your system prompt. The Telegram bot does exactly this, together with today's date and the channel name.
+
+### Build it yourself
+
+Use this if the download link doesn't work, or if you want the latest `main` instead of the last release.
+
+Claude Code, straight from the repository. macOS / Linux:
 ```bash
 mkdir -p ~/.claude/skills/mobidata-bw
 curl -fsSL https://raw.githubusercontent.com/satyesh88/mobidata-bw-mcp/main/skill/SKILL.md \
@@ -198,19 +210,19 @@ Invoke-WebRequest https://raw.githubusercontent.com/satyesh88/mobidata-bw-mcp/ma
   -OutFile "$HOME\.claude\skills\mobidata-bw\SKILL.md"
 ```
 
-To use it in only one project, put it in `.claude/skills/mobidata-bw/SKILL.md` inside that project instead.
-
-### Your own agent (any model)
-
-Add the text of [`skill/SKILL.md`](skill/SKILL.md) to your system prompt. The Telegram bot does exactly this, together with today's date and the channel name.
+The upload ZIP, from a clone of this repository (macOS / Linux):
+```bash
+mkdir -p build/mobidata-bw && cp skill/SKILL.md build/mobidata-bw/
+(cd build && zip -X ../mobidata-bw.zip mobidata-bw/SKILL.md)
+```
 
 <details>
-<summary>Build the ZIP yourself (if the download link doesn't work)</summary>
+<summary>Build the ZIP by hand (no terminal)</summary>
 
 1. Open [`skill/SKILL.md`](skill/SKILL.md) on GitHub. Click **Raw**, then save the page as `SKILL.md`.
 2. Create a folder named exactly `mobidata-bw` and put `SKILL.md` inside it.
 3. Compress the **folder**. On Mac, right-click it and choose **Compress**. On Windows, right-click it and choose **Send to → Compressed (zipped) folder**.
-4. Upload `mobidata-bw.zip` as in step 3 above. The ZIP must contain `mobidata-bw/SKILL.md`.
+4. Upload `mobidata-bw.zip` under **Customize → Skills → + → Upload a skill**. The ZIP must contain `mobidata-bw/SKILL.md`.
 </details>
 
 ---

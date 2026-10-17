@@ -1,0 +1,50 @@
+name: Skill release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  skill-zip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build mobidata-bw.zip
+        run: |
+          set -euo pipefail
+          mkdir -p build/mobidata-bw
+          cp skill/SKILL.md build/mobidata-bw/SKILL.md
+          (cd build && zip -X ../mobidata-bw.zip mobidata-bw/SKILL.md)
+          unzip -l mobidata-bw.zip
+          test "$(unzip -Z1 mobidata-bw.zip)" = "mobidata-bw/SKILL.md"
+
+      - name: Keep the ZIP as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobidata-bw
+          path: mobidata-bw.zip
+          if-no-files-found: error
+
+      - name: Attach the ZIP to the release for this tag
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          fi
+          gh release upload "$TAG" mobidata-bw.zip --clobber
+          echo "Release: https://github.com/$GH_REPO/releases/tag/$TAG"
+
+      - name: Note for runs that are not on a tag
+        if: github.ref_type != 'tag'
+        run: echo "Not a tag, so no release was touched. Download the 'mobidata-bw' artifact, or run this workflow on a tag."
