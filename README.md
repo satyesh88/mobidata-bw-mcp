@@ -164,34 +164,54 @@ Use the same `command` and `args` as in the Claude Desktop example. In VS Code, 
 
 ## 3. Add the skill
 
-The MCP server gives an agent the **tools**. The skill (`skill/SKILL.md`) teaches it **how to use them**:
+The MCP server gives an agent the **tools**. The skill teaches it **how to use them**:
 - which tool fits which question
-- to always state how fresh the data is, and to say "no live data" instead of guessing
+- to always state how fresh the data is
 - how to read accessibility surveys
-- which caveats to mention (for example, that supplementary traffic signs are missing)
+- which caveats to mention
 - how to attribute MobiData BW
 
-Without the skill the tools still work. With it, answers are more consistent and more honest. The skill only helps when the MCP server (hosted or local) is also connected.
+The skill only helps when the MCP server (hosted or local) is also connected.
 
-**Claude Code** (all your projects):
+### Claude (web and desktop): no terminal needed
 
+1. Turn on **Settings → Capabilities → Code execution and file creation**.
+2. Download **[mobidata-bw.zip](https://github.com/satyesh88/mobidata-bw-mcp/releases/latest/download/mobidata-bw.zip)**. Don't unzip it.
+3. Go to **Customize → Skills → + → Create skill → Upload a skill** and choose the ZIP.
+4. Start a **new chat** and ask: *"Is Heilbronn Hbf step-free?"*
+
+More detail: [Use skills in Claude](https://support.claude.com/en/articles/12512180-use-skills-in-claude).
+
+### Claude Code
+
+macOS / Linux:
 ```bash
 mkdir -p ~/.claude/skills/mobidata-bw
 curl -fsSL https://raw.githubusercontent.com/satyesh88/mobidata-bw-mcp/main/skill/SKILL.md \
   -o ~/.claude/skills/mobidata-bw/SKILL.md
 ```
 
+Windows (PowerShell):
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills\mobidata-bw" | Out-Null
+Invoke-WebRequest https://raw.githubusercontent.com/satyesh88/mobidata-bw-mcp/main/skill/SKILL.md `
+  -OutFile "$HOME\.claude\skills\mobidata-bw\SKILL.md"
+```
+
 To use it in only one project, put it in `.claude/skills/mobidata-bw/SKILL.md` inside that project instead.
 
-**Claude (web and desktop):**
-1. Turn on **Settings → Capabilities → Code execution and file creation**.
-2. Create a folder named `mobidata-bw` with `SKILL.md` inside it, and zip it:
-   ```bash
-   mkdir mobidata-bw && cp skill/SKILL.md mobidata-bw/ && zip -r mobidata-bw.zip mobidata-bw
-   ```
-3. Go to **Customize → Skills → + → Create skill → Upload a skill** and choose the ZIP. See [Use skills in Claude](https://support.claude.com/en/articles/12512180-use-skills-in-claude).
+### Your own agent (any model)
 
-**Your own agent (any model):** add the text of `SKILL.md` to your system prompt. The Telegram bot does exactly this, together with today's date, so the model can resolve phrases like "next Wednesday".
+Add the text of [`skill/SKILL.md`](skill/SKILL.md) to your system prompt. The Telegram bot does exactly this, together with today's date and the channel name.
+
+<details>
+<summary>Build the ZIP yourself (if the download link doesn't work)</summary>
+
+1. Open [`skill/SKILL.md`](skill/SKILL.md) on GitHub. Click **Raw**, then save the page as `SKILL.md`.
+2. Create a folder named exactly `mobidata-bw` and put `SKILL.md` inside it.
+3. Compress the **folder**. On Mac, right-click it and choose **Compress**. On Windows, right-click it and choose **Send to → Compressed (zipped) folder**.
+4. Upload `mobidata-bw.zip` as in step 3 above. The ZIP must contain `mobidata-bw/SKILL.md`.
+</details>
 
 ---
 
