@@ -22,7 +22,7 @@ from telegram.ext import (
     filters,
 )
 
-from .agent import MobilityAgent, RecommendedPlace
+from .agent import MobilityAgent, RecommendedPlace, place_label
 from .formatting import answer_html
 from .limits import DailyBudget, HourlyRateLimiter
 from .mcp_bridge import MCPBridge
@@ -76,10 +76,19 @@ def navigation_keyboard(
         [
             [
                 InlineKeyboardButton(
-                    f"🧭 {place.name}"[:64], url=navigation_url(place)
+                    f"🧭 {place_label(place)}"[:64], url=navigation_url(place)
                 )
             ]
             for place in places[:3]
+        ]
+    )
+
+
+def example_keyboard(count: int = 3) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(example, callback_data=f"example:{index}")]
+            for index, example in enumerate(EXAMPLES[:count])
         ]
     )
 
@@ -290,15 +299,19 @@ class BotHandlers:
             answer_html(answer.text),
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
-            reply_markup=navigation_keyboard(answer.places),
+            reply_markup=(
+                example_keyboard()
+                if answer.off_topic
+                else navigation_keyboard(answer.places)
+            ),
         )
-        if answer.places:
+        if answer.places and not answer.off_topic:
             best_place = answer.places[0]
             await context.bot.send_venue(
                 chat_id,
                 latitude=best_place.lat,
                 longitude=best_place.lon,
-                title=best_place.name[:256],
+                title=place_label(best_place)[:256],
                 address=best_place.address[:256],
             )
         LOGGER.info(

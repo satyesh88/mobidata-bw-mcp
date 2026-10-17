@@ -15,8 +15,8 @@ Requires the MobiData BW MCP server (17 tools). This skill only says when to use
 - Always show freshness: live (with age in minutes), stale (older than 30 minutes), no live feed, scheduled, or surveyed (with the survey year). Quote the returned timestamp.
 - Always pass on every item in `warnings`. If `truncated` is true, say that more results exist.
 - If you state a count, it must equal the number of items you list.
-- Times are Europe/Berlin, written HH:MM.
-- A date without a year means its next upcoming occurrence from today's date. Pass dates to tools as ISO dates.
+- Times are Europe/Berlin local time, written HH:MM. Convert any UTC timestamp from a result and never write "UTC".
+- A date without a year means that day in the current year. If that day has already passed, do not silently use next year: say so in the first line, show today's situation, and ask whether the user meant next year, for example "15 Oct has passed. Showing today's situation. Did you mean 15 Oct 2027?" Pass dates to tools as ISO dates.
 - Reply in the user's language, German or English.
 - End every answer with the attribution line: Daten: MobiData BW® / NVBW und Datengeber. Name the licence when the user asks for it or the result flags it.
 - If a tool fails or returns nothing, say the lookup failed or found nothing. Never guess a reason and never fill the gap from memory.

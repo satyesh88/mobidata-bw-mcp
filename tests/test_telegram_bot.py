@@ -275,7 +275,8 @@ async def test_agent_injects_berlin_time_and_resolves_next_yearless_date(
     first_call = mobility_agent.client.messages.create.await_args_list[0].kwargs
     second_call = mobility_agent.client.messages.create.await_args_list[1].kwargs
     assert "2026-10-14T23:30:00+02:00" in first_call["system"]
-    assert "next upcoming occurrence" in first_call["system"]
+    assert "has already passed" in first_call["system"]
+    assert "do not silently use next year" in first_call["system"]
     assert "always call check_route" in first_call["system"]
     assert "pass all of them in travel" in first_call["system"]
     assert "order as route waypoints" in first_call["system"]

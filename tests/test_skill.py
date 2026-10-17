@@ -33,5 +33,7 @@ def test_skill_keeps_the_route_and_safety_rules() -> None:
     assert "Never answer a route-between-places question using only get_roadworks" in text
     assert "not legally binding" in text
     assert "survey year" in text
-    assert "next upcoming occurrence" in text
+    assert "has already passed" in text
+    assert "do not silently use next year" in text
+    assert "never write \"UTC\"" in text
     assert "Daten: MobiData BW® / NVBW und Datengeber" in text
