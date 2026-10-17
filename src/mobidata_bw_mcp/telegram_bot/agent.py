@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from anthropic import AsyncAnthropic
 
 from ..geo import haversine_m
+from .formatting import is_search_header
 from .mcp_bridge import MCPBridge, result_text, tool_error_result
 from .timefmt import localize_clock_text, localize_tool_result
 
@@ -39,10 +40,14 @@ Telegram channel rules (these override anything above):
   worked example.
 - For drive or public transport comparisons, use about eight short lines: compare 🚗 accessible
   parking and live availability, 🚆 step-free platforms and lifts, and connections. End with a
-  one-line recommendation naming uncertainties, then finish with Recommendation: <facility name>.
+  one-line recommendation naming uncertainties, then add a machine-only line
+  Recommendation: <facility name>. The application uses it for the pin and hides this line.
   Live availability is not a forecast for tomorrow.
 - Otherwise use at most five short phone-sized lines, no tables, sparse relevant emoji.
   A list explicitly requested may be longer: one short line per item.
+- If departures returns source_timeout, say "the timetable source didn’t respond".
+  Never infer that no departures are published from an error. Do not retry for a platform.
+- For public transport apps in Baden-Württemberg suggest DB Navigator or bwegt, never VRR.
 - Do not write the "Searched around" line yourself; the application adds it.
 - Never mention tool names or internal implementation.
 - All times are Europe/Berlin local time, written HH:MM. Tool timestamps are already converted;
@@ -236,6 +241,7 @@ class MobilityAgent:
         grounding_retry = False
         off_topic = False
         tool_error_text: str | None = None
+        departures_timed_out = False
         for _round in range(self.max_tool_rounds + 1):
             if time.monotonic() >= tool_deadline:
                 break
@@ -325,21 +331,28 @@ class MobilityAgent:
             )
             tool_results = []
 
-            async def run_tool(block: Any) -> Any:
+            async def run_tool(block: Any, departures_failed: bool = departures_timed_out) -> Any:
+                from mcp.types import CallToolResult
+
                 began = time.monotonic()
                 try:
+                    if block.name == "get_departures" and departures_failed:
+                        return CallToolResult(content=[], isError=True, structuredContent={
+                            "error": "source_timeout",
+                            "message": "The timetable source didn’t respond.",
+                            "partial": True,
+                        })
                     async with asyncio.timeout(
                         min(TOOL_TIMEOUT, max(0, tool_deadline - time.monotonic()))
                     ):
                         return await self.bridge.call_tool(block.name, block.input)
                 except TimeoutError:
-                    from mcp.types import CallToolResult
-
                     return CallToolResult(
                         content=[],
                         isError=True,
                         structuredContent={
-                            "error": "source timed out",
+                            "error": ("source_timeout" if block.name == "get_departures"
+                                      else "source timed out"),
                             "tool": block.name,
                             "partial": True,
                         },
@@ -357,7 +370,11 @@ class MobilityAgent:
             for block, result in zip(tool_blocks, results, strict=True):
                 tools_used.append(block.name)
                 serialized_result = result_text(result)
-                if result.isError:
+                timed_out = block.name == "get_departures" and "source_timeout" in serialized_result
+                if timed_out:
+                    departures_timed_out = True
+                    tool_error_text = "The timetable source didn’t respond."
+                elif result.isError:
                     tool_error_text = (
                         ACCESSIBILITY_ERROR
                         if block.name in {"find_accessible_parking", "stop_accessibility"}
@@ -379,7 +396,7 @@ class MobilityAgent:
                         "content": _model_result_text(serialized_result, _item_limit(block.name))[
                             :8000
                         ],
-                        "is_error": bool(result.isError),
+                        "is_error": bool(result.isError) or timed_out,
                     }
                 )
             messages.append({"role": "user", "content": tool_results})
@@ -637,7 +654,7 @@ def _recommended_places(
         facility_address = _address_text(item.get("address"))
         if is_generic_name(str(name)) and not facility_address:
             continue
-        address = facility_address or item.get("city") or fallback_address
+        address = facility_address or str(name)
         places.append(
             RecommendedPlace(
                 name=str(name),
@@ -821,7 +838,8 @@ def _default_place_name(kind: str) -> str:
 
 def _with_searched_place(text: str, place: tuple[str, str | None], question: str) -> str:
     text = "\n".join(
-        line for line in text.splitlines() if not line.lstrip().startswith("📍")
+        line for line in text.splitlines()
+        if not line.lstrip().startswith("📍") and not is_search_header(line)
     ).strip()
     label, place_type = place
     is_german = _GERMAN_PATTERN.search(question) is not None

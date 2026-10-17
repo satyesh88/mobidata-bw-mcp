@@ -56,7 +56,25 @@ def safe_html(text: str, limit: int = 1200) -> str:
     return f"{escape(prefix.rstrip())}\n{escape(TRUNCATION_NOTICE)}"
 
 
+def is_search_header(line: str) -> bool:
+    return re.match(
+        r"^\s*(?:📍\s*)?(?:Searched around|Gesucht um)\s*:", line, re.IGNORECASE
+    ) is not None
+
+
 def answer_html(text: str, limit: int = 1200) -> str:
+    # Keep the raw answer for pin selection; hide machine metadata only at rendering.
+    lines = []
+    seen_header = False
+    for line in text.splitlines():
+        if re.match(r"^\s*(?:Recommendation|Empfehlung):", line, re.IGNORECASE):
+            continue
+        if is_search_header(line):
+            if seen_header:
+                continue
+            seen_header = True
+        lines.append(line)
+    text = "\n".join(lines)
     if text.strip() in {
         "The accessibility lookup failed",
         "The mobility lookup failed",

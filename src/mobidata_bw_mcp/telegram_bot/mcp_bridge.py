@@ -164,7 +164,9 @@ class MCPBridge:
                 return CallToolResult(
                     content=[], isError=True,
                     structuredContent={
-                        "error": "source timed out", "tool": request.name, "partial": True
+                        "error": ("source_timeout" if request.name == "get_departures"
+                                  else "source timed out"),
+                        "tool": request.name, "partial": True
                     },
                 )
             except Exception:

@@ -6,6 +6,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..clients import geocode, gtfs, wfs
+from ..clients.http import SourceTimeout
 from ..config import DATASET_LICENSES, settings
 from ..geo import bbox_around, compact_dict, geometry_location, haversine_m
 from ..models import LocationInput, ResultEnvelope, source_info
@@ -55,6 +56,26 @@ async def find_transit(
 
 
 async def get_departures(
+    stop_or_station_id: str,
+    date_value: date | None = None,
+    from_time: datetime | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        return await _get_departures(stop_or_station_id, date_value, from_time, limit)
+    except (TimeoutError, SourceTimeout):
+        logging.getLogger(__name__).info(
+            "departures error=source_timeout total_ms=%.1f",
+            (time.perf_counter() - started) * 1000,
+        )
+        return {
+            "error": "source_timeout", "partial": True,
+            "message": "The timetable source didn’t respond.",
+        }
+
+
+async def _get_departures(
     stop_or_station_id: str,
     date_value: date | None = None,
     from_time: datetime | None = None,
@@ -142,10 +163,13 @@ async def get_departures(
     ).compact()
 
     logging.getLogger(__name__).info(
-        "departures stop_lookup_ms=%.1f postgrest_ms=%.1f formatting_ms=%.1f cache_hit=%s",
+        "departures stop_lookup_ms=%.1f stop_id_count=%d postgrest_ms=%.1f "
+        "formatting_ms=%.1f cache_hit=%s total_ms=%.1f",
         lookup_ms,
+        len(ids),
         query_ms,
         (time.perf_counter() - formatting_start) * 1000,
         cache_hit,
+        (time.perf_counter() - start) * 1000,
     )
     return result

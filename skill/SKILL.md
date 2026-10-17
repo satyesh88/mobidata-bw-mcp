@@ -150,6 +150,16 @@ Daten: MobiData BW® / NVBW und Datengeber
 Compare both options in one answer: 🚗 accessible parking spaces and live availability;
 🚆 step-free platforms, lifts and available connections. Finish with a one-line
 recommendation naming uncertainties (including missing origin, lift status, or connections).
-End comparison answers with the visible line `Recommendation: <facility name>`.
+Add a machine-only line `Recommendation: <facility name>` after the prose recommendation.
+The Telegram renderer parses it for the pin and hides it from the displayed answer.
 Use the exact facility name (or its street/address for generic names) so navigation matches.
 Live parking availability cannot predict spaces tomorrow. On Telegram use about eight lines.
+
+
+### Timetable failures and Telegram location headers
+When departures returns `source_timeout`, say “the timetable source didn’t respond”.
+A timeout is not evidence that no departures are published. Do not retry individual
+platforms after the station timetable lookup times out; answer the other parts.
+Suggest DB Navigator or bwegt for public transport apps in Baden-Württemberg, never VRR.
+Print “Searched around” only once. In Telegram the application adds that header;
+do not write another one.

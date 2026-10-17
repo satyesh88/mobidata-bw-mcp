@@ -352,6 +352,7 @@ def serve(host: str, port: int, insecure_no_auth: bool = False) -> None:
     configure_logging()
     logging.getLogger("mobidata_bw_mcp.prewarm").setLevel(logging.INFO)
     logging.getLogger("mobidata_bw_mcp.tools.transit").setLevel(logging.INFO)
+    logging.getLogger("mobidata_bw_mcp.clients.gtfs").setLevel(logging.INFO)
     app = McpGateway(
         server.streamable_http_app(),
         keys,

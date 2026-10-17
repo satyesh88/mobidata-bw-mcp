@@ -65,9 +65,7 @@ async def test_stop_lookup_cached_and_parent_expanded(monkeypatch):
 
 async def test_candidate_trips_narrow_view_and_keep_midnight_times(monkeypatch):
     source = AsyncMock(side_effect=[
-        [{"trip_id": "overnight"}],  # previous service day's 47:30
-        [{"trip_id": "today"}],
-        [{"trip_id": "tomorrow"}],
+        [{"trip_id": "overnight"}, {"trip_id": "today"}, {"trip_id": "tomorrow"}],
         [{"t_departure": "2026-10-20T00:15:00+02:00", "stop_id": "de:1"}],
     ])
     monkeypatch.setattr(gtfs.http, "get_json", source)
@@ -81,8 +79,9 @@ async def test_candidate_trips_narrow_view_and_keep_midnight_times(monkeypatch):
     result = await gtfs.departures(params)
     assert len(result) == 1
     calls = source.await_args_list
-    assert "47:30:00" in calls[0].args[1]["and"]
-    assert "00:00:00" in calls[2].args[1]["and"]
+    assert "47:30:00" in calls[0].args[1]["or"]
+    assert "00:00:00" in calls[0].args[1]["or"]
+    assert len(calls) == 2
     view = calls[-1].args[1]
     assert view["trip_id"] == 'in.("overnight","today","tomorrow")'
     assert view["select"] == gtfs.COLUMNS
@@ -95,8 +94,11 @@ async def test_source_failure_is_not_cached(monkeypatch):
     monkeypatch.setattr(gtfs, "resolve_stop_ids", AsyncMock(return_value=["de:1"]))
     source = AsyncMock(side_effect=[TimeoutError(), []])
     monkeypatch.setattr(gtfs, "departures", source)
-    with pytest.raises(TimeoutError):
-        await transit.get_departures("Heilbronn Hbf", from_time=WHEN)
+    result = await transit.get_departures("Heilbronn Hbf", from_time=WHEN)
+    assert result["error"] == "source_timeout"
+    assert "didn’t respond" in result["message"]
+    assert "count" not in result
+    assert "published" not in str(result)
     await transit.get_departures("Heilbronn Hbf", from_time=WHEN)
     assert source.await_count == 2
 
@@ -136,3 +138,42 @@ async def test_departure_cache_expires_after_ten_minutes(monkeypatch):
     now[0] = 601
     await transit.get_departures("Heilbronn Hbf", from_time=WHEN)
     assert source.await_count == 2
+
+
+async def test_all_platforms_in_one_timetable_request_without_retries(monkeypatch):
+    params = {
+        "_start": WHEN.isoformat(), "stop_id": 'in.("de:1:1","de:1:4")',
+        "date": "eq.2026-10-19", "select": gtfs.COLUMNS, "limit": 10,
+        "order": "t_departure",
+        "and": "(t_departure.gte.2026-10-19T09:00:00+02:00,"
+               "t_departure.lt.2026-10-19T10:30:00+02:00)",
+    }
+    source = AsyncMock(side_effect=[
+        [{"trip_id": f"trip{i}"} for i in range(20)],
+        [{"trip_id": f"trip{i}"} for i in range(20, 35)],
+        [],
+    ])
+    monkeypatch.setattr(gtfs.http, "get_json", source)
+    await gtfs.departures(params)
+    views = [
+        call for call in source.await_args_list
+        if call.args[0].endswith("arrivals_departures")
+    ]
+    assert len(views) == 1
+    assert views[0].args[1]["stop_id"] == params["stop_id"]
+    assert views[0].args[1]["limit"] == 10
+    assert "trip34" in views[0].args[1]["trip_id"]
+    assert all(call.kwargs["attempts"] == 1 for call in source.await_args_list)
+
+
+async def test_http_timeout_returns_source_timeout_without_empty_departures(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(gtfs, "resolve_stop_ids", AsyncMock(return_value=["de:1"]))
+    request = AsyncMock(side_effect=httpx.ReadTimeout("source did not respond"))
+    monkeypatch.setattr(gtfs.http._client, "request", request)
+    result = await transit.get_departures("Heilbronn Hbf", from_time=WHEN)
+    assert result["error"] == "source_timeout"
+    assert "count" not in result and "items" not in result
+    assert "published" not in str(result)
+    request.assert_awaited_once()

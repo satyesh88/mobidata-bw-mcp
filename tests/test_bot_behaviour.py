@@ -446,3 +446,106 @@ def test_three_buttons_but_pin_can_recommend_a_later_facility():
         "🧭 Garage A", "🧭 Garage B", "🧭 Garage C"
     ]
     assert recommended_place(text, ordered) == places[3]
+
+
+def test_render_hides_marker_but_keeps_recommendation_for_pin_and_one_location_header():
+    from mobidata_bw_mcp.telegram_bot.formatting import answer_html
+
+    text = (
+        "📍 Searched around: Heilbronn Hbf\n"
+        "Searched around: Heilbronn\n"
+        "I recommend Bahnhof West P+R; live lift status remains unknown.\n"
+        "Recommendation: Bahnhof West P+R"
+    )
+    rendered = answer_html(text)
+    assert rendered.count("Searched around") == 1
+    assert "Recommendation:" not in rendered
+    assert rendered.count("Bahnhof West P+R") == 1
+    finished = agent_module._with_searched_place(
+        text, ("Heilbronn Hbf", "station"), "Parking"
+    )
+    assert finished.count("Searched around") == 1
+
+
+@pytest.mark.asyncio
+async def test_pin_uses_facility_coordinates_and_address_not_search_anchor():
+    import json
+
+    payload = {
+        "query": {"location": {
+            "label": "Heilbronn Hauptbahnhof", "lat": 49.1431403, "lon": 9.2076637,
+        }},
+        "items": [{
+            "name": "Bahnhof West P+R", "lat": 49.145, "lon": 9.204,
+            "address": {"street": "Weststraße", "house_number": "12"},
+        }],
+    }
+    text = "Use Bahnhof West P+R.\nRecommendation: Bahnhof West P+R"
+    ordered = _places_for_answer(
+        text, _recommended_places(json.dumps(payload), "find_parking", {})
+    )
+    handlers = BotHandlers(Settings("123:token", "model", 10, 10, frozenset(), 10), MCPBridge())
+    handlers.agent = SimpleNamespace(answer=AsyncMock(
+        return_value=AgentAnswer(text, 1, 1, ["find_parking"], "end_turn", 1, ordered)
+    ))
+    bot = SimpleNamespace(
+        send_chat_action=AsyncMock(), send_message=AsyncMock(), send_venue=AsyncMock()
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=7), effective_chat=SimpleNamespace(id=8)
+    )
+    await handlers._answer(update, SimpleNamespace(bot=bot), "Parking")
+    bot.send_venue.assert_awaited_once_with(
+        8, latitude=49.145, longitude=9.204,
+        title="Bahnhof West P+R", address="Weststraße 12",
+    )
+    assert "Recommendation:" not in bot.send_message.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_departures_timeout_blocks_platform_retry_and_never_claims_none():
+    from mcp.types import CallToolResult
+
+    bridge = MCPBridge()
+    bridge.call_tool = AsyncMock(return_value=CallToolResult(
+        content=[], structuredContent={
+            "error": "source_timeout", "message": "The timetable source didn’t respond.",
+            "partial": True,
+        }
+    ))
+    agent = MobilityAgent(bridge, "model")
+    agent.client.messages.create = AsyncMock(side_effect=[
+        response(Block("tool_use", id="1", name="get_departures", input={
+            "stop_or_station_id": "Heilbronn Hbf"
+        })),
+        response(Block("tool_use", id="2", name="get_departures", input={
+            "stop_or_station_id": "de:08121:26:4:4"
+        })),
+        response(Block("text", text="No departures are published.")),
+    ])
+    answer = await agent.answer("Departures tomorrow at 9?", [])
+    bridge.call_tool.assert_awaited_once()
+    assert answer.text == "The timetable source didn’t respond."
+    assert "source_timeout" in str(agent.client.messages.create.await_args.kwargs["messages"])
+    assert "DB Navigator or bwegt, never VRR" in agent_module.SYSTEM_PROMPT
+
+
+def test_bahnhof_west_live_survey_coordinates_without_invented_address():
+    import json
+
+    from mobidata_bw_mcp.telegram_bot.agent import recommended_place
+
+    payload = {
+        "query": {"location": {
+            "label": "Heilbronn Hauptbahnhof", "lat": 49.1431403, "lon": 9.2076637,
+        }},
+        "items": [{"name": "Bahnhof West", "lat": 49.1425348, "lon": 9.2171518}],
+    }
+    text = "Bahnhof West has surveyed accessible parking.\nRecommendation: Bahnhof West"
+    places = _places_for_answer(
+        text, _recommended_places(json.dumps(payload), "find_accessible_parking", {})
+    )
+    selected = recommended_place(text, places)
+    assert (selected.lat, selected.lon) == (49.1425348, 9.2171518)
+    assert selected.address == "Bahnhof West"
+    assert "Hauptbahnhof" not in selected.address

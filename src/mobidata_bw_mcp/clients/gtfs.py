@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import re
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,6 +20,23 @@ COLUMNS = (
 )
 
 
+async def _query(url: str, params: dict[str, Any], *, timeout: float = 4) -> Any:
+    started = time.perf_counter()
+    outcome = "ok"
+    try:
+        return await http.get_json(url, params, timeout=timeout, attempts=1)
+    except BaseException as exc:
+        outcome = type(exc).__name__
+        raise
+    finally:
+        logging.getLogger(__name__).info(
+            "departures_query resource=%s duration_ms=%.1f outcome=%s",
+            url.rsplit("/", 1)[-1],
+            (time.perf_counter() - started) * 1000,
+            outcome,
+        )
+
+
 async def resolve_stop_ids(value: str) -> list[str]:
     key = value.strip().casefold()
     if key in _stop_cache:
@@ -25,7 +44,7 @@ async def resolve_stop_ids(value: str) -> list[str]:
     if value.startswith("de:") or value.isdigit():
         ids = [value]
         if value.endswith("_Parent"):
-            children = await http.get_json(
+            children = await _query(
                 f"{settings.gtfs_url}stops",
                 {
                     "parent_station": f"eq.{value}",
@@ -53,7 +72,7 @@ async def resolve_stop_ids(value: str) -> list[str]:
             if ids:
                 _stop_cache[key] = ids
             return ids
-        rows = await http.get_json(f"{settings.gtfs_url}stops", params)
+        rows = await _query(f"{settings.gtfs_url}stops", params)
         ids = [row["stop_id"] for row in rows]
         parents = list(
             dict.fromkeys(row["parent_station"] for row in rows if row.get("parent_station"))
@@ -61,7 +80,7 @@ async def resolve_stop_ids(value: str) -> list[str]:
         # Expand parent stations once so departures need only the indexed stop_id filter.
         if parents:
             quoted = ",".join('"' + item.replace('"', "") + '"' for item in parents)
-            children = await http.get_json(
+            children = await _query(
                 f"{settings.gtfs_url}stops",
                 {
                     "parent_station": f"in.({quoted})",
@@ -90,6 +109,7 @@ async def _bounded_departures(params: dict[str, Any]) -> list[dict[str, Any]]:
     # GTFS service-day intervals may exceed 24:00. Include the previous service day
     # and the next day for windows crossing midnight; the final timestamp filter
     # below decides which dated departures actually belong to the requested window.
+    windows = []
     for day_offset in (-1, 0, 1):
         midnight = start.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
             days=day_offset
@@ -104,40 +124,35 @@ async def _bounded_departures(params: dict[str, Any]) -> list[dict[str, Any]]:
             minutes, seconds = divmod(remainder, 60)
             return f"{hours:02}:{minutes:02}:{seconds:02}"
 
-        offset = 0
-        while True:
-            rows = await http.get_json(
-                f"{settings.gtfs_url}stop_times",
-                {
-                    "stop_id": stop_filter,
-                    "select": "trip_id",
-                    "and": f"(departure_time.gte.{interval(lower)},"
-                    f"departure_time.lt.{interval(upper)})",
-                    "order": "departure_time,trip_id,stop_sequence",
-                    "limit": 20,
-                    "offset": offset,
-                },
-                timeout=4,
-            )
-            candidates.extend(row["trip_id"] for row in rows)
-            if len(rows) < 20:
-                break
-            offset += 20
+        windows.append(
+            f"and(departure_time.gte.{interval(lower)},departure_time.lt.{interval(upper)})"
+        )
 
-    records = []
+    offset = 0
+    while True:
+        rows = await _query(
+            f"{settings.gtfs_url}stop_times",
+            {
+                "stop_id": stop_filter,
+                "select": "trip_id",
+                "or": "(" + ",".join(windows) + ")",
+                "order": "departure_time,trip_id,stop_sequence",
+                "limit": 20,
+                "offset": offset,
+            },
+        )
+        candidates.extend(row["trip_id"] for row in rows)
+        if len(rows) < 20:
+            break
+        offset += 20
+
     trips = list(dict.fromkeys(candidates))
-    for offset in range(0, len(trips), 20):
-        quoted = ",".join(
-            '"' + value.replace('"', "") + '"' for value in trips[offset : offset + 20]
-        )
-        query = {key: value for key, value in params.items() if not key.startswith("_")}
-        query["trip_id"] = f"in.({quoted})"
-        # Timestamp bounds already constrain the date. Query adjacent service dates
-        # too, retaining GTFS 24+ hour trips and windows crossing midnight.
-        query["date"] = f"gte.{(start.date() - timedelta(days=1)).isoformat()}"
-        query["and"] = query["and"][:-1] + f",date.lte.{end.date().isoformat()})"
-        records.extend(
-            await http.get_json(f"{settings.gtfs_url}arrivals_departures", query, timeout=4)
-        )
-    records.sort(key=lambda row: datetime.fromisoformat(row["t_departure"].replace("Z", "+00:00")))
-    return records[: params["limit"]]
+    if not trips:
+        return []
+    quoted = ",".join('"' + value.replace('"', "") + '"' for value in trips)
+    query = {key: value for key, value in params.items() if not key.startswith("_")}
+    query["trip_id"] = f"in.({quoted})"
+    query["date"] = f"gte.{(start.date() - timedelta(days=1)).isoformat()}"
+    query["and"] = query["and"][:-1] + f",date.lte.{end.date().isoformat()})"
+    # One view request across all platforms; never retry by individual platform.
+    return await _query(f"{settings.gtfs_url}arrivals_departures", query)
