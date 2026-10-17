@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -8,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from .models import BBox, LocationInput, RoutePoint, Vehicle
+from .prewarm import prewarm
 from .tools import (
     accessibility,
     charging,
@@ -27,8 +29,12 @@ from .tools.about import about as about_data
 
 @asynccontextmanager
 async def lifespan(_server: FastMCP):
-    await signs.sign_index()
-    yield
+    task = asyncio.create_task(prewarm(), name="mobidata-prewarm")
+    try:
+        yield
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 def create_server(

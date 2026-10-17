@@ -150,4 +150,6 @@ Daten: MobiData BW® / NVBW und Datengeber
 Compare both options in one answer: 🚗 accessible parking spaces and live availability;
 🚆 step-free platforms, lifts and available connections. Finish with a one-line
 recommendation naming uncertainties (including missing origin, lift status, or connections).
+End comparison answers with the visible line `Recommendation: <facility name>`.
+Use the exact facility name (or its street/address for generic names) so navigation matches.
 Live parking availability cannot predict spaces tomorrow. On Telegram use about eight lines.

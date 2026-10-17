@@ -398,14 +398,20 @@ async def test_empty_query_searches_everything(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_lifespan_preloads_sign_index(monkeypatch) -> None:
-    called = False
+async def test_lifespan_prewarms_without_blocking_startup(monkeypatch) -> None:
+    import asyncio
 
-    async def fake_sign_index():
-        nonlocal called
-        called = True
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
 
-    monkeypatch.setattr("mobidata_bw_mcp.server.signs.sign_index", fake_sign_index)
+    async def warm():
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
 
+    monkeypatch.setattr("mobidata_bw_mcp.server.prewarm", warm)
     async with lifespan(None):
-        assert called is True
+        await asyncio.wait_for(started.wait(), 0.1)
+    assert cancelled.is_set()

@@ -39,7 +39,8 @@ Telegram channel rules (these override anything above):
   worked example.
 - For drive or public transport comparisons, use about eight short lines: compare 🚗 accessible
   parking and live availability, 🚆 step-free platforms and lifts, and connections. End with a
-  one-line recommendation naming uncertainties. Live availability is not a forecast for tomorrow.
+  one-line recommendation naming uncertainties, then finish with Recommendation: <facility name>.
+  Live availability is not a forecast for tomorrow.
 - Otherwise use at most five short phone-sized lines, no tables, sparse relevant emoji.
   A list explicitly requested may be longer: one short line per item.
 - Do not write the "Searched around" line yourself; the application adds it.
@@ -621,12 +622,22 @@ def _recommended_places(
         else "Location from MobiData BW"
     )
     places: list[RecommendedPlace] = []
+    if isinstance(query_location, dict) and all(
+        query_location.get(key) is not None for key in ("lat", "lon")
+    ):
+        places.append(RecommendedPlace(
+            name=fallback_address, lat=float(query_location["lat"]),
+            lon=float(query_location["lon"]), kind="search", address=fallback_address,
+        ))
     for item in value.get("items", []):
         if not isinstance(item, dict) or item.get("lat") is None or item.get("lon") is None:
             continue
         kind = _place_kind(tool_name, item, arguments or {})
         name = item.get("name") or item.get("station_name") or _default_place_name(kind)
-        address = _address_text(item.get("address")) or item.get("city") or fallback_address
+        facility_address = _address_text(item.get("address"))
+        if is_generic_name(str(name)) and not facility_address:
+            continue
+        address = facility_address or item.get("city") or fallback_address
         places.append(
             RecommendedPlace(
                 name=str(name),
@@ -682,7 +693,10 @@ def _merge_places(
     merged = list(existing)
     for place in incoming:
         if not any(
-            haversine_m(place.lat, place.lon, current.lat, current.lon) <= 50 for current in merged
+            place.name.casefold() == current.name.casefold()
+            and place.kind == current.kind
+            and haversine_m(place.lat, place.lon, current.lat, current.lon) <= 50
+            for current in merged
         ):
             merged.append(place)
     return merged
@@ -702,7 +716,7 @@ def _street_text(value: Any) -> str | None:
 
 
 _GENERIC_NAME = re.compile(
-    r"(?:parkplatz|parkplätze|parkhaus|parkgarage|tiefgarage|garage|stellplatz|stellplätze|"
+    r"(?:heilbronn|stuttgart|parkplatz|parkplätze|parkhaus|parkgarage|tiefgarage|garage|stellplatz|stellplätze|"
     r"parking|car park|p\s*[+&]\s*r|park\s*&\s*ride|bike parking|bicycle parking|"
     r"fahrradparkplatz|fahrradabstellanlage|ladestation|ladepunkt|ladesäule|"
     r"charging(?: station| point)?|charger|haltestelle|station|e-scooter|"
@@ -717,13 +731,15 @@ def is_generic_name(name: str) -> bool:
 
 def place_label(place: RecommendedPlace) -> str:
     """Facility name for buttons and pins; the street when the name is a generic word."""
-    if is_generic_name(place.name) and place.street:
-        return place.street
+    if is_generic_name(place.name):
+        return place.street or place.address
     return place.name
 
 
 def _mention_position(text: str, place: RecommendedPlace) -> int | None:
-    candidates = [place.street] if place.street else []
+    candidates = [place_label(place)] if is_generic_name(place.name) else []
+    if place.street:
+        candidates.append(place.street)
     if not is_generic_name(place.name):
         candidates.append(place.name)
     positions = [text.find(candidate.casefold()) for candidate in candidates]
@@ -732,16 +748,36 @@ def _mention_position(text: str, place: RecommendedPlace) -> int | None:
 
 
 def _places_for_answer(text: str, places: list[RecommendedPlace]) -> list[RecommendedPlace]:
-    """Places the answer mentions, in the order it mentions them; else the tool order."""
-    normalized_text = text.casefold()
+    """Only named facilities, in textual order; search anchors are a last resort."""
+    body = "\n".join(
+        line for line in text.splitlines()
+        if not line.lstrip().startswith(("📍", "Daten:"))
+    ).casefold()
     mentioned = [
         (position, index, place)
         for index, place in enumerate(places)
-        if (position := _mention_position(normalized_text, place)) is not None
+        if place.kind not in {"search", "city", "district"}
+        and not is_generic_name(place_label(place))
+        and (position := _mention_position(body, place)) is not None
     ]
     if mentioned:
-        return [place for _position, _index, place in sorted(mentioned, key=lambda m: m[:2])][:3]
-    return places[:3]
+        return [place for _, _, place in sorted(mentioned, key=lambda m: m[:2])]
+    return [place for place in places if place.kind == "search"][:1]
+
+
+def recommended_place(text: str, places: list[RecommendedPlace]) -> RecommendedPlace | None:
+    if not places:
+        return None
+    match = re.search(r"(?im)\b(?:Recommendation|Empfehlung):\s*(.+)$", text)
+    if match:
+        named = match[1].casefold()
+        matches = [
+            (position, place) for place in places
+            if (position := _mention_position(named, place)) is not None
+        ]
+        if matches:
+            return min(matches, key=lambda item: item[0])[1]
+    return places[0]
 
 
 def _item_limit(tool_name: str) -> int:

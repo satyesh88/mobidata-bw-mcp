@@ -1,5 +1,9 @@
-from datetime import date, datetime
+import logging
+import time
+from datetime import date, datetime, timedelta
+from datetime import time as clock_time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..clients import geocode, gtfs, wfs
 from ..config import DATASET_LICENSES, settings
@@ -16,9 +20,7 @@ async def find_transit(
     bbox = bbox_around(resolved, radius_m)
     payloads = await __import__("asyncio").gather(
         wfs.features("MobiData-BW:transit_stops", bbox=bbox, limit=1000),
-        wfs.features(
-            "MobiData-BW:transit_stations_with_served_routes", bbox=bbox, limit=1000
-        ),
+        wfs.features("MobiData-BW:transit_stations_with_served_routes", bbox=bbox, limit=1000),
     )
     items = []
     for item_type, payload in zip(("stop", "station"), payloads, strict=True):
@@ -59,17 +61,52 @@ async def get_departures(
     limit: int = 10,
 ) -> dict[str, Any]:
     """Get scheduled departures for a stop or station; dates near today may not be published yet."""
-    bounded = limit_value(limit)
-    service_date = date_value or (from_time.date() if from_time else date.today())
-    params: dict[str, Any] = {
-        "or": f"(stop_id.eq.{stop_or_station_id},station_id.eq.{stop_or_station_id})",
-        "date": f"eq.{service_date.isoformat()}",
-        "order": "t_departure",
-        "limit": bounded,
-    }
-    if from_time:
-        params["t_departure"] = f"gte.{from_time.isoformat()}"
-    records = await gtfs.departures(params)
+    bounded = min(limit_value(limit), 20)
+    start = time.perf_counter()
+    berlin = ZoneInfo("Europe/Berlin")
+    if from_time is not None:
+        from_time = (
+            from_time.replace(tzinfo=berlin)
+            if from_time.tzinfo is None
+            else from_time.astimezone(berlin)
+        )
+    service_date = date_value or (from_time.date() if from_time else datetime.now(berlin).date())
+    requested = datetime.combine(
+        service_date, from_time.timetz() if from_time else clock_time(), tzinfo=berlin
+    )
+    ids = await gtfs.resolve_stop_ids(stop_or_station_id)
+    lookup_ms = (time.perf_counter() - start) * 1000
+    query_start = time.perf_counter()
+    # Hour buckets retain exact windows separately: 09:55 must never reuse 09:00's
+    # truncated rows, and callers with different limits must not poison one another.
+    bucket_key = (tuple(ids), service_date.isoformat(), requested.hour)
+    window_key = (requested.isoformat(), bounded)
+    bucket = gtfs._departure_cache.get(bucket_key, {})
+    cache_hit = window_key in bucket
+    if cache_hit:
+        records = bucket[window_key]
+    elif not ids:
+        records = []
+    else:
+        quoted = ",".join('"' + value.replace('"', "") + '"' for value in ids)
+        params: dict[str, Any] = {
+            "select": gtfs.COLUMNS,
+            "stop_id": f"in.({quoted})",
+            "_start": requested.isoformat(),
+            "date": f"eq.{service_date.isoformat()}",
+            "and": f"(t_departure.gte.{requested.isoformat()},"
+            f"t_departure.lt.{(requested + timedelta(minutes=90)).isoformat()})",
+            "order": "t_departure",
+            "limit": bounded,
+        }
+        records = await gtfs.departures(params)
+        bucket = {**bucket, window_key: records}
+        if bucket_key not in gtfs._departure_cache:
+            gtfs._departure_cache[bucket_key] = bucket
+        else:
+            gtfs._departure_cache[bucket_key][window_key] = records
+    query_ms = (time.perf_counter() - query_start) * 1000
+    formatting_start = time.perf_counter()
     items = [
         compact_dict(
             {
@@ -91,7 +128,7 @@ async def get_departures(
         else []
     )
     warnings.append("Times are scheduled, not realtime.")
-    return ResultEnvelope(
+    result = ResultEnvelope(
         query={
             "stop_or_station_id": stop_or_station_id,
             "date": service_date.isoformat(),
@@ -103,3 +140,12 @@ async def get_departures(
         source=source_info("gtfs-arrivals-departures", settings.gtfs_url, DATASET_LICENSES["gtfs"]),
         warnings=warnings,
     ).compact()
+
+    logging.getLogger(__name__).info(
+        "departures stop_lookup_ms=%.1f postgrest_ms=%.1f formatting_ms=%.1f cache_hit=%s",
+        lookup_ms,
+        query_ms,
+        (time.perf_counter() - formatting_start) * 1000,
+        cache_hit,
+    )
+    return result

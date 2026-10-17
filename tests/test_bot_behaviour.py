@@ -237,7 +237,7 @@ def test_button_label_is_the_facility_name_or_the_street_for_generic_names() -> 
         [
             place("Parkhaus Hauptbahnhof", "Am Hauptbahnhof 1"),
             place("Parkplatz", "Kaiserstraße 12", 49.2),
-            place("Parkplatz", None, 49.3),
+            place("Parkplatz", "Bahnhofstraße 5", 49.3),
         ]
     )
 
@@ -245,7 +245,7 @@ def test_button_label_is_the_facility_name_or_the_street_for_generic_names() -> 
     assert [row[0].text for row in keyboard.inline_keyboard] == [
         "🧭 Parkhaus Hauptbahnhof",
         "🧭 Kaiserstraße 12",
-        "🧭 Parkplatz",
+        "🧭 Bahnhofstraße 5",
     ]
 
 
@@ -259,8 +259,7 @@ def test_generic_street_label_comes_from_the_facility_address_not_the_search_anc
     places = _recommended_places(result, "find_parking", {})
 
     assert place_label(places[0]) == "Kaiserstraße 12"
-    assert place_label(places[1]) == "Parkplatz"
-    assert places[1].street is None
+    assert len(places) == 1
 
 
 def test_buttons_follow_the_order_the_text_mentions_places() -> None:
@@ -282,10 +281,10 @@ def test_buttons_follow_the_order_the_text_mentions_places() -> None:
     ]
 
 
-def test_places_fall_back_to_tool_order_when_the_text_names_none() -> None:
+def test_unnamed_facilities_do_not_get_buttons() -> None:
     places = [place("Garage Nord", "Nordstraße 1"), place("Parkhaus Mitte", "Mittelstraße 2", 49.2)]
 
-    assert _places_for_answer("Two options were found.", places) == places
+    assert _places_for_answer("Two options were found.", places) == []
 
 
 @pytest.mark.asyncio
@@ -365,3 +364,85 @@ async def test_off_topic_reply_gets_example_buttons_and_no_pin() -> None:
 
 def test_example_keyboard_has_two_to_three_buttons() -> None:
     assert 2 <= len(example_keyboard().inline_keyboard) <= 3
+
+
+@pytest.mark.parametrize(
+    ("text", "facilities", "buttons", "pin"),
+    [
+        (
+            "📍 Searched around: Heilbronn\n"
+            "🚗 Bahnhof West P+R has accessible spaces.\n"
+            "🚆 Heilbronn Hbf has surveyed lifts.\n"
+            "Recommendation: Bahnhof West P+R",
+            [("Heilbronn", None), ("Heilbronn Hbf", None), ("Bahnhof West P+R", None)],
+            ["Bahnhof West P+R", "Heilbronn Hbf"],
+            "Bahnhof West P+R",
+        ),
+        (
+            "Kaiserstraße 12 first, then Parkhaus Mitte. Recommendation: Parkhaus Mitte",
+            [("Parkhaus Mitte", "Mittelstraße 2"), ("Parkplatz", "Kaiserstraße 12")],
+            ["Kaiserstraße 12", "Parkhaus Mitte"],
+            "Parkhaus Mitte",
+        ),
+        (
+            "Kaufland is nearest. ENBW Am Autobahnkreuz 2 has faster charging.\n"
+            "Recommendation: ENBW Am Autobahnkreuz 2",
+            [("Kaufland", None), ("ENBW Am Autobahnkreuz 2", None)],
+            ["Kaufland", "ENBW Am Autobahnkreuz 2"],
+            "ENBW Am Autobahnkreuz 2",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_answer_drives_buttons_and_recommended_pin(text, facilities, buttons, pin):
+    places = [place(name, street, 49 + i / 100) for i, (name, street) in enumerate(facilities)]
+    for candidate in places:
+        if candidate.name == "Heilbronn":
+            candidate.kind = "search"
+    ordered = _places_for_answer(text, places)
+    handlers = BotHandlers(Settings("123:token", "model", 10, 10, frozenset(), 10), MCPBridge())
+    handlers.agent = SimpleNamespace(answer=AsyncMock(
+        return_value=AgentAnswer(text, 1, 1, ["find_parking"], "end_turn", 1, ordered)
+    ))
+    bot = SimpleNamespace(
+        send_chat_action=AsyncMock(), send_message=AsyncMock(), send_venue=AsyncMock()
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=7), effective_chat=SimpleNamespace(id=8)
+    )
+    await handlers._answer(update, SimpleNamespace(bot=bot), "Drive or train?")
+    markup = bot.send_message.await_args.kwargs["reply_markup"]
+    assert [row[0].text for row in markup.inline_keyboard] == ["🧭 " + b for b in buttons]
+    assert bot.send_venue.await_args.kwargs["title"] == pin
+    selected = next(p for p in ordered if place_label(p) == pin)
+    assert bot.send_venue.await_args.kwargs["latitude"] == selected.lat
+
+
+def test_search_anchor_only_fallback_and_no_geographic_deduplication():
+    from mobidata_bw_mcp.telegram_bot.agent import _merge_places
+
+    search = RecommendedPlace("Heilbronn", 49.1, 9.1, "search", "Heilbronn")
+    station = RecommendedPlace("Heilbronn Hbf", 49.1, 9.1, "station", "Bahnhofstraße 1")
+    parking = RecommendedPlace("Bahnhof West P+R", 49.1, 9.1, "parking", "Bahnhofstraße 2")
+    places = _merge_places([], [search, station, parking])
+    assert len(places) == 3
+    assert _places_for_answer("📍 Searched around: Heilbronn\nBahnhof West P+R", places) == [
+        parking
+    ]
+    assert _places_for_answer("No facility confirmed.", places) == [search]
+    assert _places_for_answer("Heilbronn Hbf first. Bahnhof West P+R second.", places) == [
+        station, parking
+    ]
+
+
+def test_three_buttons_but_pin_can_recommend_a_later_facility():
+    from mobidata_bw_mcp.telegram_bot.agent import recommended_place
+
+    places = [place(f"Garage {letter}", None, 49 + i / 100) for i, letter in enumerate("ABCD")]
+    text = "Garage A, Garage B, Garage C, Garage D.\nRecommendation: Garage D"
+    ordered = _places_for_answer(text, places)
+    keyboard = navigation_keyboard(ordered)
+    assert [row[0].text for row in keyboard.inline_keyboard] == [
+        "🧭 Garage A", "🧭 Garage B", "🧭 Garage C"
+    ]
+    assert recommended_place(text, ordered) == places[3]

@@ -83,7 +83,7 @@ def test_navigation_buttons_are_ranked_capped_and_use_expected_modes() -> None:
     assert len(keyboard.inline_keyboard) == 3
     assert travel_mode(places[0]) == "driving"
     assert travel_mode(places[2]) == "walking"
-    assert keyboard.inline_keyboard[0][0].text == "🧭 Garage"
+    assert keyboard.inline_keyboard[0][0].text == "🧭 Main St 1"
     assert keyboard.inline_keyboard[0][0].url == navigation_url(places[0])
     assert keyboard.inline_keyboard[2][0].url.endswith(
         "destination=49.3,9.3&travelmode=walking"
@@ -115,7 +115,7 @@ def test_places_are_deduplicated_within_fifty_metres() -> None:
         ],
     )
 
-    assert [place.name for place in places] == ["Platform 1", "Other station"]
+    assert [place.name for place in places] == ["Platform 1", "Platform 2", "Other station"]
 
 
 def test_model_result_count_matches_supplied_items() -> None:
@@ -413,7 +413,7 @@ async def test_agent_converts_bridge_exception_to_explicit_error_result() -> Non
 
 
 @pytest.mark.asyncio
-async def test_agent_falls_back_to_first_tool_places_when_answer_names_none() -> None:
+async def test_agent_omits_unnamed_facilities_when_no_search_anchor_exists() -> None:
     from mobidata_bw_mcp.telegram_bot.agent import MobilityAgent
 
     bridge = MCPBridge()
@@ -446,14 +446,14 @@ async def test_agent_falls_back_to_first_tool_places_when_answer_names_none() ->
 
     answer = await agent.answer("Find parking", [])
 
-    assert [place.name for place in answer.places] == ["Garage"]
+    assert answer.places == []
 
 
 @pytest.mark.parametrize(
     ("question", "response_text"),
     [
-        ("Parking near Heilbronn Hbf", "Two nearby parking options were found."),
-        ("Parken am Heilbronn Hbf", "Zwei Parkmöglichkeiten wurden gefunden."),
+        ("Parking near Heilbronn Hbf", "Garage A and Garage B are nearby."),
+        ("Parken am Heilbronn Hbf", "Garage A und Garage B sind in der Nähe."),
     ],
 )
 @pytest.mark.asyncio

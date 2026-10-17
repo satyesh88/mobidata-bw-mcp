@@ -22,7 +22,7 @@ from telegram.ext import (
     filters,
 )
 
-from .agent import MobilityAgent, RecommendedPlace, place_label
+from .agent import MobilityAgent, RecommendedPlace, place_label, recommended_place
 from .formatting import answer_html
 from .limits import DailyBudget, HourlyRateLimiter
 from .mcp_bridge import MCPBridge
@@ -318,7 +318,7 @@ class BotHandlers:
         )
         await delete_progress()
         if answer.places and not answer.off_topic:
-            best_place = answer.places[0]
+            best_place = recommended_place(answer.text, answer.places)
             await context.bot.send_venue(
                 chat_id,
                 latitude=best_place.lat,

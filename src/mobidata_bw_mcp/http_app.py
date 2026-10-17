@@ -328,8 +328,8 @@ def configure_logging() -> None:
 def serve(host: str, port: int, insecure_no_auth: bool = False) -> None:
     import uvicorn
 
+    from .prewarm import prewarm
     from .server import create_server
-    from .tools import signs
 
     keys: KeyStore | None = None
     if not insecure_no_auth:
@@ -350,11 +350,13 @@ def serve(host: str, port: int, insecure_no_auth: bool = False) -> None:
         log_level="WARNING",
     )
     configure_logging()
+    logging.getLogger("mobidata_bw_mcp.prewarm").setLevel(logging.INFO)
+    logging.getLogger("mobidata_bw_mcp.tools.transit").setLevel(logging.INFO)
     app = McpGateway(
         server.streamable_http_app(),
         keys,
         per_key_limit=int(os.getenv("MOBIDATA_MCP_RATE_PER_KEY", "60")),
         global_limit=int(os.getenv("MOBIDATA_MCP_RATE_GLOBAL", "600")),
-        warmup=signs.sign_index,
+        warmup=prewarm,
     )
     uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)
