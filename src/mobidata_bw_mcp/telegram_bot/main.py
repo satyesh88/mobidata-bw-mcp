@@ -1,0 +1,365 @@
+import asyncio
+import hashlib
+import logging
+import os
+import re
+import secrets
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+
+from dotenv import load_dotenv
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ChatAction, ParseMode
+from telegram.error import InvalidToken
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+
+from .agent import MobilityAgent, RecommendedPlace
+from .formatting import answer_html
+from .limits import DailyBudget, HourlyRateLimiter
+from .mcp_bridge import MCPBridge
+from .texts import (
+    ABOUT_TEXT,
+    BUDGET_TEXT,
+    ERROR_TEXT,
+    EXAMPLES,
+    HELP_TEXT,
+    LOCATION_TEXT,
+    NOT_ALLOWED_TEXT,
+    RATE_LIMIT_TEXT,
+    RESET_TEXT,
+    START_TEXT,
+    TIMEOUT_TEXT,
+)
+
+LOGGER = logging.getLogger("mobidata.telegram")
+STATE_TTL = timedelta(minutes=30)
+TELEGRAM_TOKEN_PATTERN = re.compile(r"^\d+:[A-Za-z0-9_-]{20,}$")
+NEAR_ME_PATTERN = re.compile(r"\b(?:near me|hier|in der nähe)\b", re.IGNORECASE)
+
+
+def uses_saved_location(question: str) -> bool:
+    return NEAR_ME_PATTERN.search(question) is not None
+
+
+def travel_mode(place: RecommendedPlace) -> str:
+    if place.kind == "bike_parking":
+        return "bicycling"
+    return (
+        "driving"
+        if place.kind in {"parking", "accessible_parking", "charger"}
+        else "walking"
+    )
+
+
+def navigation_url(place: RecommendedPlace) -> str:
+    return (
+        "https://www.google.com/maps/dir/?api=1"
+        f"&destination={place.lat},{place.lon}&travelmode={travel_mode(place)}"
+    )
+
+
+def navigation_keyboard(
+    places: list[RecommendedPlace],
+) -> InlineKeyboardMarkup | None:
+    if not places:
+        return None
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"🧭 {place.name}"[:64], url=navigation_url(place)
+                )
+            ]
+            for place in places[:3]
+        ]
+    )
+
+
+@dataclass
+class Conversation:
+    messages: deque[dict[str, str]] = field(default_factory=lambda: deque(maxlen=6))
+    expires_at: datetime = field(default_factory=lambda: datetime.now(UTC) + STATE_TTL)
+
+
+class EphemeralState:
+    def __init__(self) -> None:
+        self._conversations: dict[int, Conversation] = {}
+        self._locations: dict[int, tuple[float, float, datetime]] = {}
+
+    def history(self, chat_id: int, now: datetime | None = None) -> list[dict[str, str]]:
+        current = now or datetime.now(UTC)
+        conversation = self._conversations.get(chat_id)
+        if conversation is None or conversation.expires_at <= current:
+            self._conversations.pop(chat_id, None)
+            return []
+        return list(conversation.messages)
+
+    def remember(self, chat_id: int, role: str, content: str) -> None:
+        conversation = self._conversations.setdefault(chat_id, Conversation())
+        conversation.expires_at = datetime.now(UTC) + STATE_TTL
+        conversation.messages.append({"role": role, "content": content})
+
+    def set_location(self, chat_id: int, latitude: float, longitude: float) -> None:
+        self._locations[chat_id] = (
+            latitude,
+            longitude,
+            datetime.now(UTC) + STATE_TTL,
+        )
+
+    def location(
+        self, chat_id: int, now: datetime | None = None
+    ) -> tuple[float, float] | None:
+        current = now or datetime.now(UTC)
+        location = self._locations.get(chat_id)
+        if location is None:
+            return None
+        latitude, longitude, expires_at = location
+        if expires_at <= current:
+            self._locations.pop(chat_id, None)
+            return None
+        return latitude, longitude
+
+    def clear(self, chat_id: int) -> None:
+        self._conversations.pop(chat_id, None)
+        self._locations.pop(chat_id, None)
+
+
+@dataclass(frozen=True)
+class Settings:
+    telegram_token: str
+    anthropic_model: str
+    daily_budget_usd: float
+    user_limit_per_hour: int
+    allowed_user_ids: frozenset[int]
+    max_tool_rounds: int
+    anthropic_workspace_id: str | None = None
+
+    @classmethod
+    def from_environment(cls) -> "Settings":
+        telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+        if not telegram_token or not anthropic_key:
+            raise RuntimeError("TELEGRAM_BOT_TOKEN and ANTHROPIC_API_KEY must be set")
+        if TELEGRAM_TOKEN_PATTERN.fullmatch(telegram_token) is None:
+            raise RuntimeError(
+                "TELEGRAM_BOT_TOKEN has an invalid format; check the .env assignment"
+            )
+        allowed = frozenset(
+            int(value.strip())
+            for value in os.getenv("ALLOWED_USER_IDS", "").split(",")
+            if value.strip()
+        )
+        return cls(
+            telegram_token=telegram_token,
+            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-haiku-5-5"),
+            daily_budget_usd=float(os.getenv("DAILY_BUDGET_USD", "10")),
+            user_limit_per_hour=int(os.getenv("USER_MSG_LIMIT_PER_HOUR", "10")),
+            allowed_user_ids=allowed,
+            max_tool_rounds=int(os.getenv("MAX_TOOL_ROUNDS", "10")),
+            anthropic_workspace_id=os.getenv("ANTHROPIC_WORKSPACE_ID") or None,
+        )
+
+
+class BotHandlers:
+    def __init__(self, settings: Settings, bridge: MCPBridge) -> None:
+        self.settings = settings
+        self.bridge = bridge
+        self.agent: MobilityAgent | None = None
+        self.state = EphemeralState()
+        self.rate_limiter = HourlyRateLimiter(settings.user_limit_per_hour)
+        self.budget = DailyBudget(settings.daily_budget_usd)
+        self._log_salt = secrets.token_bytes(16)
+
+    async def startup(self, _application: Application) -> None:
+        await self.bridge.start()
+        self.agent = MobilityAgent(
+            self.bridge,
+            self.settings.anthropic_model,
+            self.settings.max_tool_rounds,
+            self.settings.anthropic_workspace_id,
+        )
+        LOGGER.info("ready tools=%d", len(self.bridge.tools))
+
+    async def shutdown(self, _application: Application) -> None:
+        await self.bridge.close()
+
+    async def start(self, update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+        keyboard = [
+            [InlineKeyboardButton(example, callback_data=f"example:{index}")]
+            for index, example in enumerate(EXAMPLES)
+        ]
+        await update.effective_message.reply_text(
+            START_TEXT,
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            disable_web_page_preview=True,
+        )
+
+    async def help(self, update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+        await update.effective_message.reply_text(HELP_TEXT)
+
+    async def about(self, update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+        await update.effective_message.reply_text(
+            ABOUT_TEXT,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+
+    async def reset(self, update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+        self.state.clear(update.effective_chat.id)
+        await update.effective_message.reply_text(RESET_TEXT)
+
+    async def save_location(self, update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+        location = update.effective_message.location
+        self.state.set_location(
+            update.effective_chat.id,
+            location.latitude,
+            location.longitude,
+        )
+        await update.effective_message.reply_text(LOCATION_TEXT)
+
+    async def example(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.callback_query
+        await query.answer()
+        try:
+            index = int(query.data.partition(":")[2])
+            question = EXAMPLES[index]
+        except (IndexError, ValueError):
+            return
+        await self._answer(update, context, question)
+
+    async def question(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await self._answer(update, context, update.effective_message.text)
+
+    async def _answer(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        question: str,
+    ) -> None:
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        if self.settings.allowed_user_ids and user_id not in self.settings.allowed_user_ids:
+            await context.bot.send_message(chat_id, NOT_ALLOWED_TEXT)
+            return
+        if not self.rate_limiter.allow(user_id):
+            await context.bot.send_message(chat_id, RATE_LIMIT_TEXT)
+            return
+        if not self.budget.available():
+            await context.bot.send_message(chat_id, BUDGET_TEXT)
+            return
+        if self.agent is None:
+            await context.bot.send_message(chat_id, ERROR_TEXT)
+            return
+
+        await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
+        started = time.monotonic()
+        try:
+            async with asyncio.timeout(45):
+                answer = await self.agent.answer(
+                    question,
+                    self.state.history(chat_id),
+                    self.state.location(chat_id) if uses_saved_location(question) else None,
+                )
+        except TimeoutError:
+            await context.bot.send_message(chat_id, TIMEOUT_TEXT)
+            return
+        except Exception:
+            LOGGER.exception("question_failed user=%s", self._user_hash(user_id))
+            await context.bot.send_message(chat_id, ERROR_TEXT)
+            return
+
+        self.budget.add_usage(
+            self.settings.anthropic_model,
+            answer.input_tokens,
+            answer.output_tokens,
+        )
+        self.state.remember(chat_id, "user", question)
+        self.state.remember(chat_id, "assistant", answer.text)
+        await context.bot.send_message(
+            chat_id,
+            answer_html(answer.text),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=navigation_keyboard(answer.places),
+        )
+        if answer.places:
+            best_place = answer.places[0]
+            await context.bot.send_venue(
+                chat_id,
+                latitude=best_place.lat,
+                longitude=best_place.lon,
+                title=best_place.name[:256],
+                address=best_place.address[:256],
+            )
+        LOGGER.info(
+            "question user=%s tools=%s stop_reason=%s tool_rounds=%d "
+            "input_tokens=%d output_tokens=%d latency_s=%.1f",
+            self._user_hash(user_id),
+            ",".join(answer.tools_used) or "none",
+            answer.stop_reason or "unknown",
+            answer.tool_rounds,
+            answer.input_tokens,
+            answer.output_tokens,
+            time.monotonic() - started,
+        )
+
+    def _user_hash(self, user_id: int) -> str:
+        return hashlib.blake2b(
+            str(user_id).encode(), key=self._log_salt, digest_size=8
+        ).hexdigest()
+
+
+def build_application(settings: Settings) -> Application:
+    bridge = MCPBridge()
+    handlers = BotHandlers(settings, bridge)
+    application = (
+        Application.builder()
+        .token(settings.telegram_token)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .get_updates_connect_timeout(30)
+        .get_updates_read_timeout(30)
+        .post_init(handlers.startup)
+        .post_shutdown(handlers.shutdown)
+        .build()
+    )
+    private = filters.ChatType.PRIVATE
+    application.add_handler(CommandHandler("start", handlers.start, filters=private))
+    application.add_handler(CommandHandler("help", handlers.help, filters=private))
+    application.add_handler(CommandHandler("reset", handlers.reset, filters=private))
+    application.add_handler(CommandHandler("about", handlers.about, filters=private))
+    application.add_handler(CallbackQueryHandler(handlers.example, pattern=r"^example:\d+$"))
+    application.add_handler(MessageHandler(private & filters.LOCATION, handlers.save_location))
+    application.add_handler(
+        MessageHandler(private & filters.TEXT & ~filters.COMMAND, handlers.question)
+    )
+    return application
+
+
+def main() -> None:
+    load_dotenv()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    settings = Settings.from_environment()
+    try:
+        build_application(settings).run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            bootstrap_retries=3,
+        )
+    except InvalidToken:
+        raise SystemExit("Telegram rejected TELEGRAM_BOT_TOKEN; check .env and BotFather") from None
+
+
+if __name__ == "__main__":
+    main()

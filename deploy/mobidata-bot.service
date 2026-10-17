@@ -1,0 +1,55 @@
+# Install as /etc/systemd/system/mobidata-bot.service (see deploy/README.md, "Telegram bot").
+# Secrets live only in /etc/mobidata-bot/env (root:mobidata-bot, 640), never in this file.
+# The bot polls Telegram (outbound only), so it opens no listening port, and it reaches the
+# MCP server on loopback with its own API key (MCP_SERVER_URL / MCP_SERVER_KEY in the env file).
+[Unit]
+Description=MobiData BW Telegram bot
+After=network-online.target mobidata-mcp.service
+Wants=network-online.target mobidata-mcp.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+User=mobidata-bot
+Group=mobidata-bot
+WorkingDirectory=/opt/mobidata-bw-mcp
+EnvironmentFile=/etc/mobidata-bot/env
+# The bot reads skill/SKILL.md relative to the source tree, so it runs from src/ rather than from site-packages.
+Environment=PYTHONPATH=/opt/mobidata-bw-mcp/src PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/mobidata-bw-mcp/venv-bot/bin/python -m mobidata_bw_mcp.telegram_bot.main
+Restart=on-failure
+RestartSec=10
+
+# Resource limits; the OOM killer picks this service before other workloads on the host.
+MemoryMax=600M
+MemorySwapMax=0
+CPUQuota=50%
+TasksMax=64
+Nice=10
+OOMScoreAdjust=500
+
+# Sandbox
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

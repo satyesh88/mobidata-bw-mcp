@@ -111,6 +111,47 @@ the script makes the file `root:<owner>` with mode 640, so the service can read 
 cd /opt/mobidata-bw-mcp && git pull && docker compose up -d --build
 ```
 
+## Telegram bot (optional)
+
+A second, separate service: the Telegram bot (`mobidata_bw_mcp.telegram_bot`). It polls Telegram, so it
+has no listening port, and it calls the MCP server on `127.0.0.1:8765` with its own API key, never
+through the public URL. Run it next to the systemd MCP setup above. Run as root.
+
+```bash
+# 1. Unprivileged user, latest code, separate venv (the MCP venv is not touched)
+useradd --system --no-create-home --shell /usr/sbin/nologin mobidata-bot
+cd /opt/mobidata-bw-mcp && git pull
+python3 -m venv venv-bot
+venv-bot/bin/pip install --only-binary=:all: --require-hashes -r deploy/requirements-bot.txt
+
+# 2. Secrets file: create it empty, then fill in the values yourself (never paste them into chat or git)
+install -d -m 750 -o root -g mobidata-bot /etc/mobidata-bot
+install -m 640 -o root -g mobidata-bot /dev/null /etc/mobidata-bot/env
+cat > /etc/mobidata-bot/env <<'EOF'
+TELEGRAM_BOT_TOKEN=
+ANTHROPIC_API_KEY=
+MCP_SERVER_URL=http://127.0.0.1:8765/mcp
+MCP_SERVER_KEY=
+ANTHROPIC_MODEL=claude-haiku-5-5
+DAILY_BUDGET_USD=10
+USER_MSG_LIMIT_PER_HOUR=15
+ALLOWED_USER_IDS=
+MAX_TOOL_ROUNDS=10
+EOF
+python3 deploy/new-api-key.py <BOT_NAME> --owner mobidata-mcp   # key for MCP_SERVER_KEY
+sudoedit /etc/mobidata-bot/env
+
+# 3. Stop any other copy of the bot (one Telegram token allows one poller: otherwise 409 Conflict), then start
+install -m 644 deploy/mobidata-bot.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now mobidata-bot
+journalctl -u mobidata-bot -n 30 --no-pager
+```
+
+The unit applies `MemoryMax=600M`, `NoNewPrivileges`, `ProtectSystem=strict`, `Restart=on-failure` and
+`OOMScoreAdjust=500`. The bot logs hashed user ids, tool names and token counts, not message text. Its
+conversation state, rate limits and daily budget counter live in memory, so a restart resets them.
+
 ## Connecting clients
 
 URL: `https://<DOMAIN>/mcp`. Header: `Authorization: Bearer <KEY>`.
