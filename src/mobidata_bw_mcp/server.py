@@ -85,7 +85,7 @@ def create_server(*, port: int = 8000) -> FastMCP:
         date: date | None = None,
         vehicle: Vehicle | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Check a caller-supplied route for active roadworks and advisory truck restrictions."""
+        """Check a route for roadworks, traffic messages, and advisory truck signs."""
         return await route_check.check_route(route, buffer_m, date, vehicle)
 
     mcp.tool()(health.data_health)

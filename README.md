@@ -68,6 +68,8 @@ VS Code users can start or debug the included `mobidata-bw` server from `.vscode
 
 The same metadata as `about` is available at the MCP resource `mobidata://about`.
 
+See [TOOLS.md](TOOLS.md) for the full reference: every parameter, result field, source, licence and caveat.
+
 ## Demo questions
 
 - Here is tomorrow's synthetic Heilbronn to Bad Rappenau route for a 26 t, 4.0 m truck. Which roadworks or truck restrictions intersect it?
