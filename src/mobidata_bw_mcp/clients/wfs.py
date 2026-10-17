@@ -71,6 +71,7 @@ async def features(
         "request": "GetFeature",
         "typeName": layer,
         "outputFormat": "application/json",
+        "srsName": "EPSG:4326",  # radvis and service-point layers default to UTM metres
         "maxFeatures": limit,
     }
     if bbox:
