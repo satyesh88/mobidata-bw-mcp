@@ -1,88 +1,70 @@
 # MobiData BW MCP Server
 
-Your data, one standard interface, usable by any AI agent.
+**Your data, one standard interface, usable by any AI agent.**
 
-This open-source [Model Context Protocol](https://modelcontextprotocol.io/) server gives Claude, Cursor, VS Code, Claude Code, the OpenAI and Anthropic APIs, chat bots, apps, and custom agents a consistent interface to public mobility data from [MobiData BW](https://mobidata-bw.de/). It combines live parking, charging and sharing status, roadworks, traffic signs, scheduled transit, catalogue discovery, and route-level computation.
+An open-source [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for public mobility data in Baden-Württemberg from [MobiData BW](https://mobidata-bw.de/). It gives any AI agent the same set of tools for live parking, charging and sharing status, roadworks, traffic messages, traffic signs, scheduled public transport, station accessibility, and route checks for trucks.
 
-> This independent project is not affiliated with or endorsed by NVBW or MobiData BW.
+Plug it into Claude, ChatGPT/OpenAI, Cursor, VS Code, Claude Code, LangChain, or your own bot or app. You don't have to write any integration code per client.
 
-## Install
+> This is an independent project. It is not affiliated with or endorsed by NVBW or MobiData BW.
 
-Requires Python 3.11 or newer and [uv](https://docs.astral.sh/uv/).
+---
 
-```bash
-# From PyPI once published
-uvx mobidata-bw-mcp
+## What you can reuse
 
-# From this repository
-uv sync
-uv run mobidata-bw-mcp
-```
-
-For a hosted endpoint (Streamable HTTP with an API key), the Telegram or WhatsApp bots, ChatGPT, mobile apps and other clients, see [Hosted server and other clients](#hosted-server-and-other-clients) below.
-
-### Claude Desktop
-
-```json
-{
-	"mcpServers": {
-		"mobidata-bw": {
-			"command": "uv",
-			"args": [
-				"--directory",
-				"/Users/<you>/Documents/mobidata-bw-mcp",
-				"run",
-				"mobidata-bw-mcp"
-			]
-		}
-	}
-}
-```
-
-Claude Code:
-
-```bash
-claude mcp add mobidata-bw -- uv --directory /path/to/mobidata-bw-mcp run mobidata-bw-mcp
-```
-
-VS Code users can start or debug the included `mobidata-bw` server from `.vscode/mcp.json`.
-
-## Hosted server and other clients
-
-The server speaks MCP, so any MCP client can use it. There are two ways to connect:
-
-| | Local (stdio) | Hosted (Streamable HTTP) |
+| Part | What it is | Where |
 |---|---|---|
-| How | The client starts the server on your machine (see [Install](#install)) | The client calls `https://mcp.routeiq.de/mcp` |
-| Needs | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | An API key from the maintainer (or your own instance) |
-| Auth | None | `Authorization: Bearer <KEY>` |
-| Best for | Claude Desktop, Cursor, VS Code, Claude Code on your own computer | Claude on the web and phone, cloud agents, bots, apps, teammates |
+| **MCP server** | 17 tools over MobiData BW data, usable from any MCP client | `src/mobidata_bw_mcp/` |
+| **Agent skill** | Instructions that teach an agent *how* to use the tools well: which tool for which question, freshness, caveats, attribution | `skill/SKILL.md` |
+| **Reference bot** | A Telegram bot built on the server, which you can copy for WhatsApp, Slack or your own app | `src/mobidata_bw_mcp/telegram_bot/` |
 
-**Maintainer-hosted endpoint:** `https://mcp.routeiq.de/mcp`. It requires an API key, so ask the maintainer for one and send it as `Authorization: Bearer <KEY>`. Keys are issued per person or app, can be revoked at any time, and are limited to 60 requests a minute each. `https://mcp.routeiq.de/health` is open and shows whether the service is up.
+## Pick your path
 
-To run your own instead, see [deploy/README.md](deploy/README.md) (a small server is enough; updates are in [deploy/UPDATING.md](deploy/UPDATING.md)) and use your own URL in the examples below. Ask NVBW about fair use before hosting it for the public. Use `--insecure-no-auth` only for local testing.
+| I want to... | Go to |
+|---|---|
+| Try it in Claude, Cursor or VS Code **without installing anything** | [1. Use the hosted server](#1-use-the-hosted-server) |
+| Run it **on my own computer**, no key needed | [2. Run it locally](#2-run-it-locally) |
+| Make my agent **answer better** with these tools | [3. Add the skill](#3-add-the-skill) |
+| Build it **into my own app, bot or agent** | [4. Build it into your product](#4-build-it-into-your-product) |
+| Host it **on my own server** | [5. Self-host](#5-self-host) |
 
-Examples below use the maintainer-hosted URL and a key in `MOBIDATA_MCP_KEY`. Only the Python client example was run against this server. The others follow the vendors' documentation, so test them with your account and check the vendor's current docs if a setting has moved.
+Try asking: *"Which fast chargers near Weinsberger Kreuz are free right now?"*
 
-### Claude on the web, desktop and phone (custom connector)
+---
 
-1. Open Customize, then Connectors, then Add custom connector.
-2. Enter `https://mcp.routeiq.de/mcp` as the URL and choose "No sign-in" for Authentication.
-3. Under Request headers add `Authorization` with the value `Bearer <KEY>` (include the word `Bearer` and the space).
-4. Turn the connector on per chat from the + menu.
+## 1. Use the hosted server
 
-Claude's servers connect to your endpoint, so it must be reachable from the public internet. Request headers are a beta feature that is limited to some organizations; if the section is missing, your organization does not have it yet. See Anthropic's guide [Add a connector that isn't in the directory](https://claude.com/docs/connectors/custom/add-unlisted).
+| | |
+|---|---|
+| URL | `https://mcp.routeiq.de/mcp` (Streamable HTTP) |
+| Auth | `Authorization: Bearer <KEY>` |
+| Status | `https://mcp.routeiq.de/health` (open) |
+| Limits | 60 requests per minute per key |
+
+**Getting a key:** open a [GitHub issue](../../issues/new) titled "API key request" and say who you are and what you want to build. The maintainer will contact you to hand over the key privately. **Never post a key in an issue, a commit or a screenshot.** Each person or app gets its own key, and any key can be revoked at any time.
+
+The examples below use `<KEY>` or the environment variable `MOBIDATA_MCP_KEY`.
 
 ### Claude Code
 
 ```bash
-claude mcp add --transport http mobidata-bw https://mcp.routeiq.de/mcp --header "Authorization: Bearer <KEY>"
+claude mcp add --transport http mobidata-bw https://mcp.routeiq.de/mcp \
+  --header "Authorization: Bearer <KEY>"
 claude mcp list
 ```
 
-### Cursor and VS Code
+### Claude (web, desktop and phone)
 
-Cursor, in `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
+1. Go to **Customize → Connectors → Add custom connector**.
+2. URL: `https://mcp.routeiq.de/mcp`. Authentication: **No sign-in**.
+3. Under **Request headers**, add `authorization` with the value `Bearer <KEY>`. Include the word `Bearer` and the space.
+4. In a chat, turn it on with **+ → Connectors**.
+
+Request headers are a beta feature that only some organisations have. If you don't see that section, use Claude Code or the `mcp-remote` bridge below instead. Details are in Anthropic's guide [Add a connector that isn't in the directory](https://claude.com/docs/connectors/custom/add-unlisted). The connector also works from the phone app, because Claude's servers make the connection.
+
+### Cursor
+
+`~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
 
 ```json
 {
@@ -95,7 +77,9 @@ Cursor, in `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
 }
 ```
 
-VS Code, in `.vscode/mcp.json`, asking for the key instead of storing it:
+### VS Code (Copilot agent mode)
+
+`.vscode/mcp.json`. VS Code asks you for the key, so it isn't stored in the file:
 
 ```json
 {
@@ -112,9 +96,9 @@ VS Code, in `.vscode/mcp.json`, asking for the key instead of storing it:
 }
 ```
 
-### Clients that only support local (stdio) servers
+### Claude Desktop config file, or any client that only supports local servers
 
-Bridge to the hosted server with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
+Bridge to the hosted server with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) (needs Node.js):
 
 ```json
 {
@@ -128,9 +112,141 @@ Bridge to the hosted server with [`mcp-remote`](https://www.npmjs.com/package/mc
 }
 ```
 
-### ChatGPT and the OpenAI API
+---
 
-OpenAI's models can call remote MCP servers from the Responses API:
+## 2. Run it locally
+
+No key and no account are needed. The server runs on your machine and calls MobiData BW directly.
+
+**Requirements:** Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+
+```bash
+# Run straight from GitHub, without cloning
+uvx --from git+https://github.com/satyesh88/mobidata-bw-mcp mobidata-bw-mcp
+
+# Or clone it (for development)
+git clone https://github.com/satyesh88/mobidata-bw-mcp
+cd mobidata-bw-mcp
+uv sync
+uv run mobidata-bw-mcp
+```
+
+### Claude Desktop
+
+Open **Settings → Developer → Edit Config** and add this to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mobidata-bw": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/satyesh88/mobidata-bw-mcp", "mobidata-bw-mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. **mobidata-bw** then appears under the tools icon. If you cloned the repo, use `"command": "uv", "args": ["--directory", "/path/to/mobidata-bw-mcp", "run", "mobidata-bw-mcp"]` instead.
+
+If Claude Desktop can't find `uvx`, use its full path (`which uvx`).
+
+### Claude Code
+
+```bash
+claude mcp add mobidata-bw -- uvx --from git+https://github.com/satyesh88/mobidata-bw-mcp mobidata-bw-mcp
+```
+
+### Cursor and VS Code
+
+Use the same `command` and `args` as in the Claude Desktop example. In VS Code, put them under `"servers"` with `"type": "stdio"`. The repo already contains a ready `.vscode/mcp.json` for development.
+
+---
+
+## 3. Add the skill
+
+The MCP server gives an agent the **tools**. The skill (`skill/SKILL.md`) teaches it **how to use them**:
+- which tool fits which question
+- to always state how fresh the data is, and to say "no live data" instead of guessing
+- how to read accessibility surveys
+- which caveats to mention (for example, that supplementary traffic signs are missing)
+- how to attribute MobiData BW
+
+Without the skill the tools still work. With it, answers are more consistent and more honest. The skill only helps when the MCP server (hosted or local) is also connected.
+
+**Claude Code** (all your projects):
+
+```bash
+mkdir -p ~/.claude/skills/mobidata-bw
+curl -fsSL https://raw.githubusercontent.com/satyesh88/mobidata-bw-mcp/main/skill/SKILL.md \
+  -o ~/.claude/skills/mobidata-bw/SKILL.md
+```
+
+To use it in only one project, put it in `.claude/skills/mobidata-bw/SKILL.md` inside that project instead.
+
+**Claude (web and desktop):**
+1. Turn on **Settings → Capabilities → Code execution and file creation**.
+2. Create a folder named `mobidata-bw` with `SKILL.md` inside it, and zip it:
+   ```bash
+   mkdir mobidata-bw && cp skill/SKILL.md mobidata-bw/ && zip -r mobidata-bw.zip mobidata-bw
+   ```
+3. Go to **Customize → Skills → + → Create skill → Upload a skill** and choose the ZIP. See [Use skills in Claude](https://support.claude.com/en/articles/12512180-use-skills-in-claude).
+
+**Your own agent (any model):** add the text of `SKILL.md` to your system prompt. The Telegram bot does exactly this, together with today's date, so the model can resolve phrases like "next Wednesday".
+
+---
+
+## 4. Build it into your product
+
+Your app talks to an LLM, the LLM calls the tools, and the server returns MobiData BW data. Any language with an MCP SDK works (Python, TypeScript, Java, Kotlin, C#, Swift, Go, Rust and others). The pattern is always the same: Streamable HTTP, the URL, and one `Authorization` header.
+
+> **Never ship the key inside a mobile or browser app.** Let the app call your own backend. The backend holds the key and talks to the MCP server, the way the bots do.
+
+### Python (official MCP SDK)
+
+```python
+import asyncio, os
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+HEADERS = {"Authorization": f"Bearer {os.environ['MOBIDATA_MCP_KEY']}"}
+
+async def main():
+    async with streamablehttp_client("https://mcp.routeiq.de/mcp", headers=HEADERS) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()          # give these to any LLM
+            result = await session.call_tool(
+                "find_parking", {"location": "Stuttgart Hauptbahnhof", "limit": 3}
+            )
+            print(result.content[0].text)
+
+asyncio.run(main())
+```
+
+### Anthropic API (MCP connector, no client code)
+
+```python
+import os, anthropic
+
+response = anthropic.Anthropic().beta.messages.create(
+    model="<MODEL>",
+    max_tokens=1024,
+    betas=["mcp-client-2025-11-20"],
+    mcp_servers=[{
+        "type": "url",
+        "url": "https://mcp.routeiq.de/mcp",
+        "name": "mobidata-bw",
+        "authorization_token": os.environ["MOBIDATA_MCP_KEY"],
+    }],
+    tools=[{"type": "mcp_toolset", "mcp_server_name": "mobidata-bw"}],
+    messages=[{"role": "user", "content": "Which chargers near Weinsberger Kreuz are free now?"}],
+)
+print(response.content)
+```
+
+Beta names change over time, so check the [MCP connector docs](https://docs.claude.com/en/docs/agents-and-tools/mcp-connector) for the current one.
+
+### OpenAI API (Responses API)
 
 ```python
 import os
@@ -150,148 +266,130 @@ resp = OpenAI().responses.create(
 print(resp.output_text)
 ```
 
-The `authorization` field is documented as an OAuth token that is sent as a bearer token; this server accepts any key issued by `deploy/new-api-key.py` in that position.
+The ChatGPT app itself expects OAuth for custom MCP servers, so this API-key server isn't a drop-in there today. Use the API as shown above.
 
-In the ChatGPT app (Plugins, Add custom MCP server), OpenAI's documentation describes OAuth sign-in for custom servers. A static API key is not documented there, so this API-key server is not a drop-in for the ChatGPT app today. Use the API as above, or put an OAuth-capable gateway in front.
+### LangChain / LangGraph
 
-### Anthropic API
+[`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) loads the tools from the same URL and header.
 
-```python
-import os
-import anthropic
+### Telegram bot (reference implementation)
 
-response = anthropic.Anthropic().beta.messages.create(
-    model="<MODEL>",
-    max_tokens=1024,
-    betas=["mcp-client-2025-11-20"],
-    mcp_servers=[{
-        "type": "url",
-        "url": "https://mcp.routeiq.de/mcp",
-        "name": "mobidata-bw",
-        "authorization_token": os.environ["MOBIDATA_MCP_KEY"],
-    }],
-    tools=[{"type": "mcp_toolset", "mcp_server_name": "mobidata-bw"}],
-    messages=[{"role": "user", "content": "Which chargers near Weinsberger Kreuz are free now?"}],
-)
-print(response.content)
-```
-
-The MCP connector supports tool calls only and needs a public HTTPS URL.
-
-### Your own Python agent
-
-```python
-import asyncio, os
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-
-HEADERS = {"Authorization": f"Bearer {os.environ['MOBIDATA_MCP_KEY']}"}
-
-async def main():
-    async with streamablehttp_client("https://mcp.routeiq.de/mcp", headers=HEADERS) as (read, write, _):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(
-                "find_parking", {"location": "Stuttgart Hauptbahnhof", "limit": 3}
-            )
-            print(result.content[0].text)
-
-asyncio.run(main())
-```
-
-For LangGraph or LangChain, [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) loads the tools from the same URL and header; see [deploy/README.md](deploy/README.md). Any MCP SDK (TypeScript, Java, Kotlin, C#, Swift, Go, Rust, Ruby, PHP) works the same way: Streamable HTTP, URL above, one `Authorization` header.
-
-### Telegram bot
-
-The repository contains a Telegram bot (`src/mobidata_bw_mcp/telegram_bot`) that answers mobility questions with Claude and this server's tools, sends navigation buttons and a location pin, and enforces per-user and daily-budget limits.
+A complete bot in `src/mobidata_bw_mcp/telegram_bot/`:
+- uses Claude with this server's tools and the skill
+- answers in German or English
+- sends navigation buttons and a location pin
+- enforces per-user and daily-budget limits
 
 ```bash
 uv sync --extra telegram
-cp .env.example .env            # set TELEGRAM_BOT_TOKEN and ANTHROPIC_API_KEY
-./run-telegram.sh               # starts its own local MCP server (stdio)
+cp .env.example .env     # set TELEGRAM_BOT_TOKEN and ANTHROPIC_API_KEY
+./run-telegram.sh        # starts its own local MCP server (stdio)
 ```
 
-To make it use a hosted server instead, set `MCP_SERVER_URL=https://mcp.routeiq.de/mcp` (or `http://127.0.0.1:8765/mcp` on the same host) and `MCP_SERVER_KEY` in `.env`. Running it as a service is covered in [deploy/README.md](deploy/README.md#telegram-bot-optional). Keep one running copy per bot token.
+To use the hosted server instead, set `MCP_SERVER_URL` and `MCP_SERVER_KEY` in `.env`. To run it as a service, see [deploy/README.md](deploy/README.md#telegram-bot-optional). Run only one copy per bot token.
 
-### WhatsApp bot
+### WhatsApp, Slack and other chat apps
 
-WhatsApp has no MCP support of its own, so a bot is a small web service between WhatsApp and the model. The agent loop in the Telegram bot (`MobilityAgent` and `MCPBridge`) does not depend on Telegram, so it can be reused:
+The agent loop (`MobilityAgent` and `MCPBridge`) doesn't depend on Telegram:
+1. Receive the message through the platform's webhook.
+2. Call `await agent.answer(text, history)`. Create `MCPBridge()` once and run `await bridge.start()`.
+3. Send `answer.text` back, formatted for that platform (for WhatsApp: plain text and `*bold*`).
 
-1. Register a number with the WhatsApp Business Cloud API and point its webhook at your service.
-2. For each incoming text, call `await agent.answer(text, history)` (create `MCPBridge()` once and `await bridge.start()`; set `MCP_SERVER_URL` and `MCP_SERVER_KEY` for a hosted server).
-3. Send `answer.text` back with the Cloud API's send-message call. Adapt the channel rules in the system prompt and format for WhatsApp (plain text, `*bold*`).
+For WhatsApp, check Meta's current Business messaging and AI policies before you launch.
 
-This is a sketch, not a shipped feature. Check Meta's current WhatsApp Business messaging and AI-assistant policies before launching.
+---
 
-### iOS and Android
+## 5. Self-host
 
-- **Claude app:** add the custom connector above on the web; Claude's servers make the connection, so it also works when you chat from the phone app.
-- **Your own app:** never put the API key in the app. Let the app call your own backend, which holds the key and talks to the MCP server (as the bots do). An official MCP SDK for Swift or Kotlin is an option when you control the key distribution.
+[deploy/README.md](deploy/README.md) covers running your own HTTPS endpoint (a small VPS is enough):
+- systemd units
+- the nginx reverse proxy
+- API keys
+- the optional bot
 
-### Key handling
+Updates are covered in [deploy/UPDATING.md](deploy/UPDATING.md).
 
-- Give each client or person its own key (`python3 deploy/new-api-key.py <NAME> --owner <service user>`), so one can be revoked without affecting the others. Revoke by deleting the line in `/etc/mobidata-mcp/keys`; no restart is needed.
-- The server limits each key to 60 requests a minute and the whole server to 600, and logs only the key name, MCP method, tool and status, not requests or locations.
-- Treat a key like a password: environment variables or a secret store, never in Git, screenshots, client-side code or chat.
+**Keys:**
+- Create one key per person or app with `python3 deploy/new-api-key.py <NAME> --owner <service user>`.
+- To revoke a key, delete its line in `/etc/mobidata-mcp/keys`. No restart is needed.
+- The server stores only key hashes.
+- Limits are 60 requests per minute per key and 600 for the whole server.
+- The server logs only the key name, MCP method, tool and status. It never logs request content or locations.
+
+Use `--insecure-no-auth` only for local testing. Ask NVBW about fair use before you host it for the public.
+
+---
 
 ## Tools
 
 | Tool | Purpose |
 |---|---|
-| `search_datasets`, `get_dataset` | Discover datasets, current resources, and licences |
+| `search_datasets`, `get_dataset` | Find datasets, their current resources and licences |
 | `list_layers`, `query_layer` | Explore and query GeoServer WFS layers |
-| `find_parking` | Nearest-first car, bicycle, motorcycle, or truck parking and live capacity, with paging |
-| `find_accessible_parking` | Nearby disabled spaces from ParkAPI plus BFRK station surveys |
-| `stop_accessibility` | Surveyed step-free access, platforms, tactile guidance, lifts, ramps, toilets, and parking |
+| `find_parking` | Nearest car, bicycle, motorcycle or truck parking with live capacity, with paging |
+| `find_accessible_parking` | Nearby disabled parking spaces from ParkAPI and BFRK station surveys |
+| `stop_accessibility` | Surveyed step-free access, platforms, tactile guidance, lifts, ramps, toilets and parking |
 | `find_charging` | Nearby chargers by power and current availability |
 | `find_sharing` | Sharing stations and free-floating vehicles |
 | `find_transit`, `get_departures` | Nearby stops and scheduled departures |
-| `get_roadworks` | Roadworks active on a selected date |
-| `find_traffic_signs` | Nearby signs, including truck restrictions |
-| `find_traffic_messages` | Current accidents, congestion, closures, and obstructions (DATEX II) |
-| `check_route` | Roadworks, traffic messages, and truck signs intersecting a supplied route |
-| `data_health` | Fresh, stale (>30 min), and no-live-feed groups with age evidence; parking defaults to off-street |
-| `about` | Server sources and caveats |
+| `get_roadworks` | Roadworks active on a given date |
+| `find_traffic_signs` | Nearby traffic signs, including truck restrictions |
+| `find_traffic_messages` | Current accidents, congestion, closures and obstructions (DATEX II) |
+| `check_route` | Roadworks, traffic messages and truck signs along a route |
+| `data_health` | Which feeds are fresh, which are stale (older than 30 min), and which have no live feed |
+| `about` | Sources and caveats (also available as the MCP resource `mobidata://about`) |
 
-The same metadata as `about` is available at the MCP resource `mobidata://about`.
+[TOOLS.md](TOOLS.md) is the full reference: every parameter, result field, source, licence and caveat.
 
-See [TOOLS.md](TOOLS.md) for the full reference: every parameter, result field, source, licence and caveat.
+## Example questions
 
-## Demo questions
-
-- Here is tomorrow's synthetic Heilbronn to Bad Rappenau route for a 26 t, 4.0 m truck. Which roadworks or truck restrictions intersect it?
-- How fresh is realtime parking data in Stuttgart or Heilbronn, and which records are stale?
+- Which roadworks or truck restrictions are on the route from Heilbronn via Weinsberg to Eberstadt next Wednesday?
+- How fresh is the live parking data in Stuttgart and Heilbronn, and which records are stale?
 - Which shared bikes and scooters are available within 1 km of Heilbronn Hbf right now?
 - Which accessible parking spaces are within 1 km of Stuttgart Hbf, and which have live availability?
-- Is Waldenburg Bahnhof step-free, and what are its lift, ramp, platform, and tactile-guidance details?
+- Is Heilbronn Hbf step-free? What are its lift, platform and tactile-guidance details?
 - Which chargers of at least 150 kW near Weinsberger Kreuz have a free connector now?
-- Which MobiData datasets cover bicycles, and under which licences?
+- Which MobiData BW datasets cover bicycles, and under which licences?
 
 ## Data and trust
 
-Sources include the MobiData BW CKAN catalogue, GeoServer WFS, ParkAPI v3, GTFS PostgREST API, daily traffic-sign export, roadworks GeoJSON, and OpenStreetMap Nominatim. Dataset licences vary, commonly CC BY 4.0 and Datenlizenz Deutschland licences. Every result identifies its endpoint, licence or licence status, attribution, timestamp where available, and freshness warnings.
+Every result names its source endpoint, licence (or missing licence), attribution, timestamp where one exists, and freshness warnings.
 
-Important caveats:
+**Sources:**
+- MobiData BW CKAN catalogue
+- GeoServer WFS
+- ParkAPI v3
+- the GTFS PostgREST API
+- the daily traffic-sign export
+- roadworks GeoJSON
+- DATEX II traffic messages
+- the BFRK accessibility surveys
+- OpenStreetMap Nominatim for geocoding
 
-- Public transport is scheduled GTFS only, not realtime.
-- BFRK accessibility surveys were collected in different years and may be outdated; inspect the returned survey year. Object coordinates are deliberately offset by about 1.5-4 m.
-- BFRK elevator records describe surveyed infrastructure, not live operating status. DB FaSta status is not queried unless separately configured.
-- Traffic-sign data is not legally binding and municipal coverage varies.
-- Supplementary signs such as `Lieferverkehr frei` are not included, so restrictions may have exceptions.
-- Nominatim geocoding is cached and rate-limited to comply with its public usage policy.
-- Read the MobiData BW terms of use before publishing or hosting this server.
+Licences vary by dataset, most often CC BY 4.0 and Datenlizenz Deutschland.
+
+**Caveats:**
+- Public transport data is the GTFS schedule, not real time.
+- BFRK accessibility surveys come from different years and may be outdated, so check the survey year in the result. Object coordinates are deliberately offset by about 1.5–4 m.
+- BFRK lift records describe the surveyed equipment, not whether a lift is working right now.
+- Traffic-sign data is not legally binding, and municipal coverage varies.
+- Supplementary signs such as "Lieferverkehr frei" are not included, so restrictions may have exceptions.
+- Nominatim geocoding is cached and rate-limited to follow its usage policy.
+- Read the MobiData BW terms of use before you publish or host this server.
+
+**Attribution:** Daten: MobiData BW® / NVBW und Datengeber.
 
 ## Development
 
 ```bash
 uv run ruff check .
 uv run pytest
-uv run python scripts/selftest.py
+uv run python scripts/selftest.py                        # one live call per source
 npx @modelcontextprotocol/inspector uv run mobidata-bw-mcp
 ```
 
-The self-test calls each live source once and verifies WFS longitude/latitude axis order around Heilbronn Hbf. Tests and examples use only public or synthetic data, never customer data.
+Tests and examples use only public or synthetic data, never customer data. Issues and pull requests are welcome.
 
 ## Licence
 
-Server source code is released under the [Apache License 2.0](LICENSE). Source datasets retain their own licences and attribution requirements.
+The server code is released under the [Apache License 2.0](LICENSE). The source datasets keep their own licences and attribution requirements.
