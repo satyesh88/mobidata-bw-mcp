@@ -1,1 +1,0 @@
-"""Telegram demo client for the MobiData BW MCP server."""

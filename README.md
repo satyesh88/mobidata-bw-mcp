@@ -92,33 +92,6 @@ Important caveats:
 - Nominatim geocoding is cached and rate-limited to comply with its public usage policy.
 - Read the MobiData BW terms of use before publishing or hosting this server.
 
-## Telegram demo
-
-The optional Telegram client starts this same MCP server over stdio, discovers its tools, and
-uses the Anthropic Messages API to answer private-chat questions. It uses long polling, so no
-public server or webhook is required.
-
-1. In [@BotFather](https://t.me/BotFather), run `/newbot`. Set the name to
-	`MobiData BW Assistant (Demo)` and configure `/setcommands` with `start`, `help`, `reset`, and
-	`about`.
-2. Copy `.env.example` to `.env`, then set `TELEGRAM_BOT_TOKEN` and `ANTHROPIC_API_KEY`. For an
-	organization-level Anthropic key, also set `ANTHROPIC_WORKSPACE_ID`; workspace-scoped keys do
-	not need it. Set a separate API-key spend limit in the Anthropic Console.
-3. Start the demo:
-
-	```bash
-	uv run --extra telegram mobidata-telegram
-	```
-
-4. Generate a QR code for `https://t.me/<bot_username>`. At the venue, connect the laptop to the
-	phone hotspot and keep the terminal visible for anonymized timing, tool, and token logs.
-5. After the event, stop the process or restrict `ALLOWED_USER_IDS` to a comma-separated list of
-	Telegram user IDs.
-
-The bot accepts text and shared locations only in private chats. Conversation context and
-locations remain in memory for 30 minutes and are lost on restart. Message text is never logged
-with user identity. Milestone 1 provides Q&A only; proactive watches are not enabled.
-
 ## Development
 
 ```bash

@@ -8,3 +8,10 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Local-only Telegram demo bot (not published)
+src/mobidata_bw_mcp/telegram_bot/
+tests/test_telegram_bot.py
+TELEGRAM_BOT_SPEC.md
+run-telegram.sh
+.env.example
