@@ -10,14 +10,23 @@ authors = [
 ]
 dependencies = [
   "cachetools>=5.5,<7",
+  "defusedxml>=0.7.1",
   "httpx>=0.28,<1",
   "mcp>=1.20,<2",
   "pydantic>=2.10,<3",
   "shapely>=2.0,<3",
 ]
 
+[project.optional-dependencies]
+telegram = [
+  "anthropic>=0.75,<1",
+  "python-dotenv>=1.1,<2",
+  "python-telegram-bot[job-queue]>=21,<23",
+]
+
 [project.scripts]
 mobidata-bw-mcp = "mobidata_bw_mcp.server:main"
+mobidata-telegram = "mobidata_bw_mcp.telegram_bot.main:main"
 
 [dependency-groups]
 dev = [
