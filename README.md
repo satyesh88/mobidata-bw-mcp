@@ -53,19 +53,21 @@ The server speaks MCP, so any MCP client can use it. There are two ways to conne
 
 | | Local (stdio) | Hosted (Streamable HTTP) |
 |---|---|---|
-| How | The client starts the server on your machine (see [Install](#install)) | The client calls `https://<DOMAIN>/mcp` |
-| Needs | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | A running instance and an API key |
+| How | The client starts the server on your machine (see [Install](#install)) | The client calls `https://mcp.routeiq.de/mcp` |
+| Needs | Python 3.11+ and [uv](https://docs.astral.sh/uv/) | An API key from the maintainer (or your own instance) |
 | Auth | None | `Authorization: Bearer <KEY>` |
 | Best for | Claude Desktop, Cursor, VS Code, Claude Code on your own computer | Claude on the web and phone, cloud agents, bots, apps, teammates |
 
-There is no public instance with open keys. To get a hosted endpoint, [run your own](deploy/README.md) (a small server is enough; updates are in [deploy/UPDATING.md](deploy/UPDATING.md)) or ask the operator of an instance for a key. Ask NVBW about fair use before hosting it for the public. Use `--insecure-no-auth` only for local testing.
+**Maintainer-hosted endpoint:** `https://mcp.routeiq.de/mcp`. It requires an API key, so ask the maintainer for one and send it as `Authorization: Bearer <KEY>`. Keys are issued per person or app, can be revoked at any time, and are limited to 60 requests a minute each. `https://mcp.routeiq.de/health` is open and shows whether the service is up.
 
-Examples below use `https://<DOMAIN>/mcp` and a key in `MOBIDATA_MCP_KEY`. Only the Python client example was run against this server. The others follow the vendors' documentation, so test them with your account and check the vendor's current docs if a setting has moved.
+To run your own instead, see [deploy/README.md](deploy/README.md) (a small server is enough; updates are in [deploy/UPDATING.md](deploy/UPDATING.md)) and use your own URL in the examples below. Ask NVBW about fair use before hosting it for the public. Use `--insecure-no-auth` only for local testing.
+
+Examples below use the maintainer-hosted URL and a key in `MOBIDATA_MCP_KEY`. Only the Python client example was run against this server. The others follow the vendors' documentation, so test them with your account and check the vendor's current docs if a setting has moved.
 
 ### Claude on the web, desktop and phone (custom connector)
 
 1. Open Customize, then Connectors, then Add custom connector.
-2. Enter `https://<DOMAIN>/mcp` as the URL and choose "No sign-in" for Authentication.
+2. Enter `https://mcp.routeiq.de/mcp` as the URL and choose "No sign-in" for Authentication.
 3. Under Request headers add `Authorization` with the value `Bearer <KEY>` (include the word `Bearer` and the space).
 4. Turn the connector on per chat from the + menu.
 
@@ -74,7 +76,7 @@ Claude's servers connect to your endpoint, so it must be reachable from the publ
 ### Claude Code
 
 ```bash
-claude mcp add --transport http mobidata-bw https://<DOMAIN>/mcp --header "Authorization: Bearer <KEY>"
+claude mcp add --transport http mobidata-bw https://mcp.routeiq.de/mcp --header "Authorization: Bearer <KEY>"
 claude mcp list
 ```
 
@@ -86,7 +88,7 @@ Cursor, in `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
 {
   "mcpServers": {
     "mobidata-bw": {
-      "url": "https://<DOMAIN>/mcp",
+      "url": "https://mcp.routeiq.de/mcp",
       "headers": { "Authorization": "Bearer <KEY>" }
     }
   }
@@ -100,7 +102,7 @@ VS Code, in `.vscode/mcp.json`, asking for the key instead of storing it:
   "servers": {
     "mobidata-bw": {
       "type": "http",
-      "url": "https://<DOMAIN>/mcp",
+      "url": "https://mcp.routeiq.de/mcp",
       "headers": { "Authorization": "Bearer ${input:mobidata-key}" }
     }
   },
@@ -119,7 +121,7 @@ Bridge to the hosted server with [`mcp-remote`](https://www.npmjs.com/package/mc
   "mcpServers": {
     "mobidata-bw": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "https://<DOMAIN>/mcp", "--header", "Authorization:${MOBIDATA_AUTH}"],
+      "args": ["-y", "mcp-remote", "https://mcp.routeiq.de/mcp", "--header", "Authorization:${MOBIDATA_AUTH}"],
       "env": { "MOBIDATA_AUTH": "Bearer <KEY>" }
     }
   }
@@ -139,7 +141,7 @@ resp = OpenAI().responses.create(
     tools=[{
         "type": "mcp",
         "server_label": "mobidata_bw",
-        "server_url": "https://<DOMAIN>/mcp",
+        "server_url": "https://mcp.routeiq.de/mcp",
         "authorization": os.environ["MOBIDATA_MCP_KEY"],
         "require_approval": "never",
     }],
@@ -164,7 +166,7 @@ response = anthropic.Anthropic().beta.messages.create(
     betas=["mcp-client-2025-11-20"],
     mcp_servers=[{
         "type": "url",
-        "url": "https://<DOMAIN>/mcp",
+        "url": "https://mcp.routeiq.de/mcp",
         "name": "mobidata-bw",
         "authorization_token": os.environ["MOBIDATA_MCP_KEY"],
     }],
@@ -186,7 +188,7 @@ from mcp.client.streamable_http import streamablehttp_client
 HEADERS = {"Authorization": f"Bearer {os.environ['MOBIDATA_MCP_KEY']}"}
 
 async def main():
-    async with streamablehttp_client("https://<DOMAIN>/mcp", headers=HEADERS) as (read, write, _):
+    async with streamablehttp_client("https://mcp.routeiq.de/mcp", headers=HEADERS) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.call_tool(
@@ -209,7 +211,7 @@ cp .env.example .env            # set TELEGRAM_BOT_TOKEN and ANTHROPIC_API_KEY
 ./run-telegram.sh               # starts its own local MCP server (stdio)
 ```
 
-To make it use a hosted server instead, set `MCP_SERVER_URL=https://<DOMAIN>/mcp` (or `http://127.0.0.1:8765/mcp` on the same host) and `MCP_SERVER_KEY` in `.env`. Running it as a service is covered in [deploy/README.md](deploy/README.md#telegram-bot-optional). Keep one running copy per bot token.
+To make it use a hosted server instead, set `MCP_SERVER_URL=https://mcp.routeiq.de/mcp` (or `http://127.0.0.1:8765/mcp` on the same host) and `MCP_SERVER_KEY` in `.env`. Running it as a service is covered in [deploy/README.md](deploy/README.md#telegram-bot-optional). Keep one running copy per bot token.
 
 ### WhatsApp bot
 
