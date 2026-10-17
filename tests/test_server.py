@@ -7,7 +7,7 @@ from mobidata_bw_mcp.server import mcp
 async def test_server_exposes_expected_tools_and_parameters() -> None:
     tools = {tool.name: tool for tool in await mcp.list_tools()}
 
-    assert len(tools) == 16
+    assert len(tools) == 17
     assert {"location", "radius_m", "limit"} == set(
         tools["find_accessible_parking"].inputSchema["properties"]
     )
@@ -21,6 +21,14 @@ async def test_server_exposes_expected_tools_and_parameters() -> None:
     assert "active_on" in tools["get_roadworks"].inputSchema["properties"]
     assert "active_from" in tools["get_roadworks"].inputSchema["properties"]
     assert "active_to" in tools["get_roadworks"].inputSchema["properties"]
+
+
+@pytest.mark.asyncio
+async def test_find_parking_purpose_is_a_closed_enum() -> None:
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    purpose = tools["find_parking"].inputSchema["properties"]["purpose"]
+
+    assert set(purpose["enum"]) == {"CAR", "BIKE", "MOTORCYCLE", "ITEM"}
 
 
 @pytest.mark.asyncio

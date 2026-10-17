@@ -53,7 +53,7 @@ VS Code users can start or debug the included `mobidata-bw` server from `.vscode
 |---|---|
 | `search_datasets`, `get_dataset` | Discover datasets, current resources, and licences |
 | `list_layers`, `query_layer` | Explore and query GeoServer WFS layers |
-| `find_parking` | Paginated nearby car, bicycle, or truck parking and live capacity |
+| `find_parking` | Nearest-first car, bicycle, motorcycle, or truck parking and live capacity, with paging |
 | `find_accessible_parking` | Nearby disabled spaces from ParkAPI plus BFRK station surveys |
 | `stop_accessibility` | Surveyed step-free access, platforms, tactile guidance, lifts, ramps, toilets, and parking |
 | `find_charging` | Nearby chargers by power and current availability |
@@ -61,7 +61,8 @@ VS Code users can start or debug the included `mobidata-bw` server from `.vscode
 | `find_transit`, `get_departures` | Nearby stops and scheduled departures |
 | `get_roadworks` | Roadworks active on a selected date |
 | `find_traffic_signs` | Nearby signs, including truck restrictions |
-| `check_route` | Roadworks and truck signs intersecting a supplied route |
+| `find_traffic_messages` | Current accidents, congestion, closures, and obstructions (DATEX II) |
+| `check_route` | Roadworks, traffic messages, and truck signs intersecting a supplied route |
 | `data_health` | Fresh, stale (>30 min), and no-live-feed groups with age evidence; parking defaults to off-street |
 | `about` | Server sources and caveats |
 
@@ -90,6 +91,33 @@ Important caveats:
 - Supplementary signs such as `Lieferverkehr frei` are not included, so restrictions may have exceptions.
 - Nominatim geocoding is cached and rate-limited to comply with its public usage policy.
 - Read the MobiData BW terms of use before publishing or hosting this server.
+
+## Telegram demo
+
+The optional Telegram client starts this same MCP server over stdio, discovers its tools, and
+uses the Anthropic Messages API to answer private-chat questions. It uses long polling, so no
+public server or webhook is required.
+
+1. In [@BotFather](https://t.me/BotFather), run `/newbot`. Set the name to
+	`MobiData BW Assistant (Demo)` and configure `/setcommands` with `start`, `help`, `reset`, and
+	`about`.
+2. Copy `.env.example` to `.env`, then set `TELEGRAM_BOT_TOKEN` and `ANTHROPIC_API_KEY`. For an
+	organization-level Anthropic key, also set `ANTHROPIC_WORKSPACE_ID`; workspace-scoped keys do
+	not need it. Set a separate API-key spend limit in the Anthropic Console.
+3. Start the demo:
+
+	```bash
+	uv run --extra telegram mobidata-telegram
+	```
+
+4. Generate a QR code for `https://t.me/<bot_username>`. At the venue, connect the laptop to the
+	phone hotspot and keep the terminal visible for anonymized timing, tool, and token logs.
+5. After the event, stop the process or restrict `ALLOWED_USER_IDS` to a comma-separated list of
+	Telegram user IDs.
+
+The bot accepts text and shared locations only in private chats. Conversation context and
+locations remain in memory for 30 minutes and are lost on restart. Message text is never logged
+with user identity. Milestone 1 provides Q&A only; proactive watches are not enabled.
 
 ## Development
 

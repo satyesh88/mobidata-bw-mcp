@@ -14,8 +14,8 @@ async def test_find_accessible_parking_merges_filters_and_sorts(
         return Location(lat=49.0, lon=9.0, label="Test location")
 
     async def fake_parking_sites(
-        _params: dict[str, Any], _limit: int
-    ) -> tuple[list[dict[str, Any]], int, None]:
+        _params: dict[str, Any], _radius_m: int
+    ) -> tuple[list[dict[str, Any]], int]:
         return (
             [
                 {
@@ -34,8 +34,7 @@ async def test_find_accessible_parking_merges_filters_and_sorts(
                     "capacity_disabled": 0,
                 },
             ],
-            2,
-            None,
+            1000,
         )
 
     async def fake_bfrk(_resolved: Location, _radius_m: int) -> list[dict[str, Any]]:
@@ -50,7 +49,7 @@ async def test_find_accessible_parking_merges_filters_and_sorts(
         ]
 
     monkeypatch.setattr(accessibility.geocode, "resolve", fake_resolve)
-    monkeypatch.setattr(accessibility.parkapi, "parking_sites", fake_parking_sites)
+    monkeypatch.setattr(accessibility.parkapi, "nearest_parking_sites", fake_parking_sites)
     monkeypatch.setattr(accessibility, "_bfrk_parking", fake_bfrk)
 
     result = await accessibility.find_accessible_parking("Test", radius_m=1000)

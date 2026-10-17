@@ -178,7 +178,7 @@ async def test_parking_deduplicates_and_warns_without_clamping(monkeypatch) -> N
     async def fake_resolve(location):
         return Location(lat=49.1427, lon=9.2069)
 
-    async def fake_sites(params, limit):
+    async def fake_sites(params, radius_m):
         return (
             [
                 {
@@ -200,12 +200,11 @@ async def test_parking_deduplicates_and_warns_without_clamping(monkeypatch) -> N
                     "realtime_data_updated_at": "2026-10-10T10:00:00Z",
                 },
             ],
-            2,
-            None,
+            radius_m,
         )
 
     monkeypatch.setattr(parking.geocode, "resolve", fake_resolve)
-    monkeypatch.setattr(parking.parkapi, "parking_sites", fake_sites)
+    monkeypatch.setattr(parking.parkapi, "nearest_parking_sites", fake_sites)
 
     result = await parking.find_parking({"lat": 49.1427, "lon": 9.2069})
 
@@ -216,30 +215,88 @@ async def test_parking_deduplicates_and_warns_without_clamping(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
-async def test_parking_exposes_limit_and_next_cursor(monkeypatch) -> None:
+async def test_parking_returns_nearest_first_across_pages(monkeypatch) -> None:
     async def fake_resolve(location):
-        return Location(lat=49.1427, lon=9.2069)
+        return Location(lat=49.0, lon=9.0)
 
-    async def fake_sites(params, limit):
-        assert limit == 200
-        assert params["start"] == 1234
-        return [], 250, 5678
+    # ParkAPI order is not distance order: the nearest sites come last.
+    sites = [
+        {"id": index, "name": f"Site {index}", "lat": 49.0 + offset, "lon": 9.0, "capacity": index}
+        for index, offset in enumerate([0.009, 0.006, 0.003, 0.001], start=1)
+    ]
+
+    async def fake_sites(params, radius_m):
+        return sites, radius_m
 
     monkeypatch.setattr(parking.geocode, "resolve", fake_resolve)
-    monkeypatch.setattr(parking.parkapi, "parking_sites", fake_sites)
+    monkeypatch.setattr(parking.parkapi, "nearest_parking_sites", fake_sites)
 
-    result = await parking.find_parking(
-        {"lat": 49.1427, "lon": 9.2069},
-        radius_m=1500,
-        limit=200,
-        cursor=1234,
+    first = await parking.find_parking({"lat": 49.0, "lon": 9.0}, radius_m=2000, limit=2)
+    assert [item["id"] for item in first["items"]] == [4, 3]
+    assert first["truncated"] is True
+    assert first["next_cursor"] == 2
+
+    second = await parking.find_parking(
+        {"lat": 49.0, "lon": 9.0}, radius_m=2000, limit=2, cursor=first["next_cursor"]
     )
+    assert [item["id"] for item in second["items"]] == [2, 1]
+    assert second["truncated"] is False
+    assert second.get("next_cursor") is None
+    assert second["query"]["cursor"] == 2
 
-    assert result["truncated"] is True
-    assert result["next_cursor"] == 5678
-    assert result["query"]["limit"] == 200
-    assert result["query"]["cursor"] == 1234
-    assert any("truncated" in warning for warning in result["warnings"])
+
+@pytest.mark.asyncio
+async def test_parking_warns_when_dense_area_radius_was_reduced(monkeypatch) -> None:
+    async def fake_resolve(location):
+        return Location(lat=49.0, lon=9.0)
+
+    async def fake_sites(params, radius_m):
+        return [{"id": 1, "name": "A", "lat": 49.0005, "lon": 9.0, "capacity": 1}], 400
+
+    monkeypatch.setattr(parking.geocode, "resolve", fake_resolve)
+    monkeypatch.setattr(parking.parkapi, "nearest_parking_sites", fake_sites)
+
+    result = await parking.find_parking({"lat": 49.0, "lon": 9.0}, radius_m=3000)
+
+    assert any("nearest 400 m of the requested 3000 m" in w for w in result["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_nearest_parking_sites_shrinks_dense_radius(monkeypatch) -> None:
+    probes = []
+
+    async def fake_sites(params, limit):
+        probes.append(params["radius"])
+        return [], (5000 if params["radius"] > 1500 else 700), None
+
+    async def fake_all(params):
+        probes.append(("all", params["radius"]))
+        return [{"id": 1}]
+
+    monkeypatch.setattr(parkapi, "parking_sites", fake_sites)
+    monkeypatch.setattr(parkapi, "all_parking_sites", fake_all)
+
+    records, radius = await parkapi.nearest_parking_sites({"lat": 1, "lon": 2}, 3000)
+
+    assert records == [{"id": 1}]
+    assert radius < 3000
+    assert probes[-1] == ("all", radius)
+
+
+@pytest.mark.asyncio
+async def test_nearest_parking_sites_keeps_radius_when_area_is_small(monkeypatch) -> None:
+    async def fake_sites(params, limit):
+        return [], 40, None
+
+    async def fake_all(params):
+        return []
+
+    monkeypatch.setattr(parkapi, "parking_sites", fake_sites)
+    monkeypatch.setattr(parkapi, "all_parking_sites", fake_all)
+
+    _records, radius = await parkapi.nearest_parking_sites({}, 800)
+
+    assert radius == 800
 
 
 @pytest.mark.asyncio

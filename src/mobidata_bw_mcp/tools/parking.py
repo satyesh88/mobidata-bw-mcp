@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, Literal
 
 from ..clients import geocode, parkapi
 from ..config import DATASET_LICENSES, settings
@@ -55,28 +55,22 @@ def _deduplicate(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], i
 async def find_parking(
     location: LocationInput | dict[str, Any],
     radius_m: int = 1000,
-    purpose: str = "CAR",
+    purpose: Literal["CAR", "BIKE", "MOTORCYCLE", "ITEM"] = "CAR",
     only_free: bool = False,
     truck: bool = False,
     limit: int = 20,
     cursor: int | None = None,
 ) -> dict[str, Any]:
-    """Find nearby parking with live capacity. Use next_cursor to fetch another page."""
+    """Find the nearest parking with live capacity. Use next_cursor for further results.
+
+    purpose: CAR (default), BIKE for bicycle stands/lockers, MOTORCYCLE, ITEM for bike boxes.
+    """
     bounded_limit = limit_value(limit)
     if cursor is not None and cursor < 0:
         raise ValueError("cursor must not be negative")
     resolved = await geocode.resolve(location)
-    params = {
-        "lat": resolved.lat,
-        "lon": resolved.lon,
-        "radius": radius_m,
-        "purpose": purpose,
-    }
-    if cursor is not None:
-        params["start"] = cursor
-    records, _total, next_cursor = await parkapi.parking_sites(
-        params,
-        bounded_limit,
+    records, searched_radius = await parkapi.nearest_parking_sites(
+        {"lat": resolved.lat, "lon": resolved.lon, "purpose": purpose}, radius_m
     )
     records, duplicates_removed = _deduplicate(records)
     items = []
@@ -111,12 +105,23 @@ async def find_parking(
         )
         items.append(item)
     items.sort(key=lambda item: item["distance_m"])
+    start = cursor or 0
+    total_matches = len(items)
+    items = items[start : start + bounded_limit]
+    next_cursor = start + bounded_limit if start + bounded_limit < total_matches else None
     stale = sum(not item.get("is_live", False) for item in items)
     warnings = []
+    if purpose == "MOTORCYCLE":
+        warnings.append("Motorcycle parking is published by very few sources; results are sparse")
     if stale:
         warnings.append(f"{stale} of {len(items)} sites do not have current live data")
     if duplicates_removed:
         warnings.append(f"Removed {duplicates_removed} duplicate parking sites")
+    if searched_radius < radius_m:
+        warnings.append(
+            f"Dense area: only the nearest {searched_radius} m of the requested "
+            f"{radius_m} m were searched; results are still nearest-first"
+        )
     if next_cursor is not None:
         warnings.append(
             f"Results are truncated; request the next page with cursor={next_cursor}"
@@ -146,8 +151,6 @@ async def find_parking(
             f"{settings.parkapi_url}parking-sites",
             DATASET_LICENSES["parking"],
         ),
-        data_timestamp=latest_datetime(
-            [record.get("realtime_data_updated_at") for record in records]
-        ),
+        data_timestamp=latest_datetime([item.get("updated_at") for item in items]),
         warnings=warnings,
     ).compact()

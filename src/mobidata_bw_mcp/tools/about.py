@@ -16,6 +16,7 @@ def about() -> dict[str, Any]:
             "BFRK accessibility surveys for Baden-Württemberg stops and stations",
             "GTFS PostgREST",
             "MobiData BW roadworks and traffic-sign GeoJSON exports",
+            "MobiData BW traffic messages (DATEX II)",
             "OpenStreetMap Nominatim geocoding",
         ],
         "licences": "Vary by dataset; each result includes source and attribution.",

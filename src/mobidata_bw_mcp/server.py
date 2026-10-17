@@ -17,6 +17,7 @@ from .tools import (
     sharing,
     signs,
     spatial,
+    traffic_messages,
     transit,
 )
 from .tools.about import about as about_data
@@ -75,6 +76,7 @@ def create_server(*, port: int = 8000) -> FastMCP:
         )
 
     mcp.tool()(signs.find_traffic_signs)
+    mcp.tool()(traffic_messages.find_traffic_messages)
 
     @mcp.tool()
     async def check_route(

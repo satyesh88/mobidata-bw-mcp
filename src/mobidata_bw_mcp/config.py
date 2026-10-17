@@ -12,6 +12,9 @@ class Settings:
         "https://api.mobidata-bw.de/datasets/traffic/roadworks/roadworks_geojson.json"
     )
     signs_url: str = "https://mobidata-bw.de/daten/portal/VZ-Daten/signs.geojson"
+    traffic_messages_url: str = (
+        "https://api.mobidata-bw.de/datasets/traffic/incidents/incidents_lmsbw.datex2.xml"
+    )
     nominatim_url: str = "https://nominatim.openstreetmap.org/search"
     user_agent: str = (
         "mobidata-bw-mcp/0.1.0 (+https://github.com/satyesh88/mobidata-bw-mcp)"
@@ -20,6 +23,7 @@ class Settings:
     max_concurrency: int = 4
     realtime_ttl: int = 60
     roadworks_ttl: int = 900
+    traffic_ttl: int = 300
     capabilities_ttl: int = 86400
     signs_ttl: int = 86400
     geocode_ttl: int = 604800
@@ -52,6 +56,7 @@ DATASET_LICENSES = {
     "parking": "Datenlizenz Deutschland - Namensnennung - Version 2.0",
     "roadworks": "Datenlizenz Deutschland - Namensnennung - Version 2.0",
     "signs": "Datenlizenz Deutschland - Namensnennung - Version 2.0",
+    "traffic_messages": "Datenlizenz Deutschland - Namensnennung - Version 2.0",
     "gtfs": "CC BY 4.0",
     "bfrk": "Datenlizenz Deutschland Namensnennung 2.0",
 }

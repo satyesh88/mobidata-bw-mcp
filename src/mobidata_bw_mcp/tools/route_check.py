@@ -4,6 +4,7 @@ from typing import Any
 from shapely.geometry import box
 
 from ..clients import routing
+from ..clients.http import SourceError
 from ..config import DATASET_LICENSES, settings
 from ..geo import (
     compact_dict,
@@ -23,6 +24,7 @@ from .signs import (
     sign_unit,
     sign_value,
 )
+from .traffic_messages import TRAFFIC_CAVEATS, selected_traffic_messages, severity
 
 
 async def check_route(
@@ -56,6 +58,12 @@ async def check_route(
     buffered_route, local_route = route_buffer_m(line, effective_buffer_m)
     roadworks = await selected_roadworks(geographic_area, effective_date)
     signs = await selected_signs(geographic_area, TRUCK_CODES)
+    traffic_warning = None
+    try:
+        _published, traffic = await selected_traffic_messages(geographic_area, effective_date)
+    except SourceError:
+        traffic = []
+        traffic_warning = "Traffic messages were unavailable; incidents are not included."
     issues = []
     for feature, geometry in roadworks:
         local_geometry = to_local_meters(geometry, center.y, center.x)
@@ -119,19 +127,51 @@ async def check_route(
                 }
             )
         )
+    for message in traffic:
+        local_geometry = to_local_meters(message["geometry"], center.y, center.x)
+        if not local_geometry.intersects(buffered_route):
+            continue
+        distance_to_route_m = local_geometry.distance(local_route)
+        issues.append(
+            compact_dict(
+                {
+                    "km_from_start": round(
+                        distance_along_route_km(local_route, local_geometry), 2
+                    ),
+                    "kind": "traffic_message",
+                    "route_relation": (
+                        "on_route" if distance_to_route_m <= buffer_m else "near_route"
+                    ),
+                    "distance_to_route_m": round(distance_to_route_m),
+                    "severity": severity(message),
+                    "category": message["category"],
+                    "description": message["description"],
+                    "location_description": message["location_description"],
+                    "start": message["start"],
+                    "end": message["end"],
+                    "source": "MobiData BW traffic messages",
+                }
+            )
+        )
     issues.sort(key=lambda item: item["km_from_start"])
     roadwork_count = sum(item["kind"] == "roadwork" for item in issues)
-    sign_count = len(issues) - roadwork_count
+    message_count = sum(item["kind"] == "traffic_message" for item in issues)
+    sign_count = len(issues) - roadwork_count - message_count
     exceeded_count = sum(bool(item.get("vehicle_exceeds_limit")) for item in issues)
     on_route_count = sum(item["route_relation"] == "on_route" for item in issues)
     near_route_count = len(issues) - on_route_count
     summary = (
         f"{on_route_count} findings on the route and {near_route_count} near the route "
-        f"({roadwork_count} roadworks, {sign_count} truck-relevant signs)"
+        f"({roadwork_count} roadworks, {message_count} traffic messages, "
+        f"{sign_count} truck-relevant signs)"
     )
     if exceeded_count:
         summary += f"; vehicle exceeds {exceeded_count} explicit limits"
     warnings = list(SIGN_CAVEATS)
+    if traffic:
+        warnings.extend(TRAFFIC_CAVEATS)
+    if traffic_warning:
+        warnings.append(traffic_warning)
     if approximated:
         warnings.insert(0, "Straight lines between supplied points approximate the driven route.")
     return ResultEnvelope(
@@ -146,9 +186,11 @@ async def check_route(
         count=len(issues),
         items=issues,
         source=source_info(
-            "roadworks-and-traffic-signs",
-            f"{settings.roadworks_url} + {settings.signs_url}",
-            f"{DATASET_LICENSES['roadworks']}; {DATASET_LICENSES['signs']}",
+            "roadworks-traffic-messages-and-traffic-signs",
+            f"{settings.roadworks_url} + {settings.traffic_messages_url} + {settings.signs_url}",
+            "; ".join(
+                DATASET_LICENSES[key] for key in ("roadworks", "traffic_messages", "signs")
+            ),
         ),
         warnings=[summary, *warnings],
     ).compact()

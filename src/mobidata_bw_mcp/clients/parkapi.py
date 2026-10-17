@@ -38,3 +38,16 @@ async def all_parking_sites(params: dict[str, Any] | None = None) -> list[dict[s
 
 async def sources() -> dict[str, Any]:
     return await http.get_json(f"{settings.parkapi_url}sources")
+
+
+async def nearest_parking_sites(
+    params: dict[str, Any], radius_m: int, cap: int = 1000
+) -> tuple[list[dict[str, Any]], int]:
+    """Fetch every site in a radius, shrinking dense areas so the nearest sites are complete."""
+    radius = radius_m
+    for _ in range(4):
+        _items, total, _next = await parking_sites({**params, "radius": radius}, 1)
+        if total <= cap:
+            break
+        radius = max(50, round(radius * (cap * 0.8 / total) ** 0.5))
+    return await all_parking_sites({**params, "radius": radius}), radius

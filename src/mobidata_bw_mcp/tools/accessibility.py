@@ -113,13 +113,12 @@ async def find_accessible_parking(
     bounded_limit = limit_value(limit)
     resolved = await geocode.resolve(location)
     parkapi_result, survey_items = await asyncio.gather(
-        parkapi.parking_sites(
-            {"lat": resolved.lat, "lon": resolved.lon, "radius": radius_m, "purpose": "CAR"},
-            settings.max_limit,
+        parkapi.nearest_parking_sites(
+            {"lat": resolved.lat, "lon": resolved.lon, "purpose": "CAR"}, radius_m
         ),
         _bfrk_parking(resolved, radius_m),
     )
-    records, _total, next_cursor = parkapi_result
+    records, searched_radius = parkapi_result
     live_items = []
     for record in records:
         if not (record.get("capacity_disabled") or 0) > 0:
@@ -155,10 +154,13 @@ async def find_accessible_parking(
             )
         )
     items = sorted(live_items + survey_items, key=lambda item: item["distance_m"])
-    truncated = len(items) > bounded_limit or next_cursor is not None
+    truncated = len(items) > bounded_limit
     warnings = list(BFRK_CAVEATS)
-    if next_cursor is not None:
-        warnings.append("ParkAPI returned a partial page; additional live sites may exist.")
+    if searched_radius < radius_m:
+        warnings.append(
+            f"Dense area: live ParkAPI sites were searched only within the nearest "
+            f"{searched_radius} m of the requested {radius_m} m."
+        )
     return ResultEnvelope(
         query={
             "location": resolved.model_dump(exclude_none=True),
