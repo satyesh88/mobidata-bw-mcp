@@ -53,11 +53,7 @@ def uses_saved_location(question: str) -> bool:
 def travel_mode(place: RecommendedPlace) -> str:
     if place.kind == "bike_parking":
         return "bicycling"
-    return (
-        "driving"
-        if place.kind in {"parking", "accessible_parking", "charger"}
-        else "walking"
-    )
+    return "driving" if place.kind in {"parking", "accessible_parking", "charger"} else "walking"
 
 
 def navigation_url(place: RecommendedPlace) -> str:
@@ -74,11 +70,7 @@ def navigation_keyboard(
         return None
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton(
-                    f"🧭 {place_label(place)}"[:64], url=navigation_url(place)
-                )
-            ]
+            [InlineKeyboardButton(f"🧭 {place_label(place)}"[:64], url=navigation_url(place))]
             for place in places[:3]
         ]
     )
@@ -124,9 +116,7 @@ class EphemeralState:
             datetime.now(UTC) + STATE_TTL,
         )
 
-    def location(
-        self, chat_id: int, now: datetime | None = None
-    ) -> tuple[float, float] | None:
+    def location(self, chat_id: int, now: datetime | None = None) -> tuple[float, float] | None:
         current = now or datetime.now(UTC)
         location = self._locations.get(chat_id)
         if location is None:
@@ -272,8 +262,25 @@ class BotHandlers:
 
         await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
         started = time.monotonic()
+        progress = None
+
+        async def show_progress() -> None:
+            nonlocal progress
+            await asyncio.sleep(8)
+            progress = await context.bot.send_message(
+                chat_id, "⏳ Checking parking, station access and connections…"
+            )
+
+        async def delete_progress() -> None:
+            if progress is not None:
+                try:
+                    await progress.delete()
+                except Exception:
+                    LOGGER.warning("progress_delete_failed")
+
+        progress_task = asyncio.create_task(show_progress())
         try:
-            async with asyncio.timeout(45):
+            async with asyncio.timeout(75):
                 answer = await self.agent.answer(
                     question,
                     self.state.history(chat_id),
@@ -281,11 +288,17 @@ class BotHandlers:
                 )
         except TimeoutError:
             await context.bot.send_message(chat_id, TIMEOUT_TEXT)
+            await delete_progress()
             return
         except Exception:
-            LOGGER.exception("question_failed user=%s", self._user_hash(user_id))
+            LOGGER.error("question_failed user=%s", self._user_hash(user_id))
             await context.bot.send_message(chat_id, ERROR_TEXT)
+            await delete_progress()
             return
+
+        finally:
+            progress_task.cancel()
+            await asyncio.gather(progress_task, return_exceptions=True)
 
         self.budget.add_usage(
             self.settings.anthropic_model,
@@ -300,11 +313,10 @@ class BotHandlers:
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
             reply_markup=(
-                example_keyboard()
-                if answer.off_topic
-                else navigation_keyboard(answer.places)
+                example_keyboard() if answer.off_topic else navigation_keyboard(answer.places)
             ),
         )
+        await delete_progress()
         if answer.places and not answer.off_topic:
             best_place = answer.places[0]
             await context.bot.send_venue(
@@ -327,9 +339,7 @@ class BotHandlers:
         )
 
     def _user_hash(self, user_id: int) -> str:
-        return hashlib.blake2b(
-            str(user_id).encode(), key=self._log_salt, digest_size=8
-        ).hexdigest()
+        return hashlib.blake2b(str(user_id).encode(), key=self._log_salt, digest_size=8).hexdigest()
 
 
 def build_application(settings: Settings) -> Application:

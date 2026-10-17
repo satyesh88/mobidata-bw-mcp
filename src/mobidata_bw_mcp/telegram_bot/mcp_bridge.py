@@ -22,9 +22,7 @@ def server_url() -> str | None:
     if not url:
         return None
     parsed = urlparse(url)
-    if parsed.scheme == "https" or (
-        parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS
-    ):
+    if parsed.scheme == "https" or (parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS):
         return url
     raise RuntimeError("MCP_SERVER_URL must use https, or http on loopback")
 
@@ -141,15 +139,11 @@ class MCPBridge:
                 listed = await session.list_tools()
                 self.tools = anthropic_tools(listed.tools)
                 self._ready.set()
-                while request := await self._queue.get():
-                    try:
-                        result = await session.call_tool(request.name, request.arguments)
-                    except Exception:
-                        if not request.future.done():
-                            request.future.set_result(tool_error_result(request.name))
-                    else:
-                        if not request.future.done():
-                            request.future.set_result(result)
+                # ClientSession multiplexes requests by ID with separate response streams.
+                # Keep stream/session ownership here while dispatching calls concurrently.
+                async with asyncio.TaskGroup() as group:
+                    while request := await self._queue.get():
+                        group.create_task(self._dispatch(session, request))
         except BaseException as exc:
             if not self._ready.is_set():
                 self._startup_error = exc
@@ -157,6 +151,34 @@ class MCPBridge:
             else:
                 self._fail_pending(exc)
                 raise
+
+    async def _dispatch(self, session: ClientSession, request: ToolCall) -> None:
+        if request.future.done():
+            return
+
+        async def invoke() -> CallToolResult:
+            try:
+                async with asyncio.timeout(15):
+                    return await session.call_tool(request.name, request.arguments)
+            except TimeoutError:
+                return CallToolResult(
+                    content=[], isError=True,
+                    structuredContent={
+                        "error": "source timed out", "tool": request.name, "partial": True
+                    },
+                )
+            except Exception:
+                return tool_error_result(request.name)
+
+        task = asyncio.create_task(invoke())
+        request.future.add_done_callback(lambda _: task.cancel() if not task.done() else None)
+        try:
+            result = await task
+            if not request.future.done():
+                request.future.set_result(result)
+        except asyncio.CancelledError:
+            if not request.future.done():
+                request.future.cancel()
 
     def _fail_pending(self, error: BaseException) -> None:
         while not self._queue.empty():

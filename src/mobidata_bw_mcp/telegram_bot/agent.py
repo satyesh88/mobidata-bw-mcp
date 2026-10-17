@@ -1,5 +1,8 @@
+import asyncio
 import json
+import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -34,8 +37,11 @@ other topic reply with exactly {OFF_TOPIC_MARKER} and nothing else; the applicat
 Telegram channel rules (these override anything above):
 - The channel is Telegram. Use the chat-app format and ignore the desktop format and the desktop
   worked example.
-- Use at most five short phone-sized lines, no tables, sparse relevant emoji. A list the user
-  explicitly asked for, such as all datasets of a category, may be longer: one short line per item.
+- For drive or public transport comparisons, use about eight short lines: compare 🚗 accessible
+  parking and live availability, 🚆 step-free platforms and lifts, and connections. End with a
+  one-line recommendation naming uncertainties. Live availability is not a forecast for tomorrow.
+- Otherwise use at most five short phone-sized lines, no tables, sparse relevant emoji.
+  A list explicitly requested may be longer: one short line per item.
 - Do not write the "Searched around" line yourself; the application adds it.
 - Never mention tool names or internal implementation.
 - All times are Europe/Berlin local time, written HH:MM. Tool timestamps are already converted;
@@ -51,6 +57,12 @@ Daten: MobiData BW® / NVBW und Datengeber
   explicitly asks for a correction or comparison.
 """
 
+LOGGER = logging.getLogger(__name__)
+TOOL_TIMEOUT = 15.0
+TOOL_DEADLINE = 60.0
+TOTAL_DEADLINE = 75.0
+DEADLINE_PROMPT = "Time is up. Answer now with the data you have and say which parts are missing."
+
 FINAL_PROMPT = "Answer now with the data you have. Do not call tools."
 USE_TOOLS_PROMPT = (
     "Use the tools before answering. Do not state unverified facts. "
@@ -61,9 +73,7 @@ OFF_TOPIC_EN = "Sorry, I can only help with mobility questions."
 OFF_TOPIC_DE = "Entschuldigung, ich kann nur bei Mobilitätsfragen helfen."
 ACCESSIBILITY_ERROR = "The accessibility lookup failed"
 MOBILITY_ERROR = "The mobility lookup failed"
-_FACT_PATTERN = re.compile(
-    r"\d|\b(?:in|near|around|at|bei|nahe|um|am)\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]+"
-)
+_FACT_PATTERN = re.compile(r"\d|\b(?:in|near|around|at|bei|nahe|um|am)\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]+")
 _PLACE_PATTERN = re.compile(r"\b[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)*\b")
 _NON_PLACE_WORDS = {
     "Answer",
@@ -179,9 +189,7 @@ class MobilityAgent:
         self.bridge = bridge
         self.model = model
         self.max_tool_rounds = max_tool_rounds
-        default_headers = (
-            {"anthropic-workspace-id": workspace_id} if workspace_id else None
-        )
+        default_headers = {"anthropic-workspace-id": workspace_id} if workspace_id else None
         self.client = AsyncAnthropic(default_headers=default_headers)
 
     async def answer(
@@ -190,6 +198,10 @@ class MobilityAgent:
         history: list[dict[str, str]],
         location: tuple[float, float] | None = None,
     ) -> AgentAnswer:
+        started = time.monotonic()
+        tool_deadline = started + TOOL_DEADLINE
+        total_deadline = started + TOTAL_DEADLINE
+        partial_data: list[str] = []
         request_time = _berlin_now()
         system_prompt = _system_prompt(request_time)
         messages: list[dict[str, Any]] = [*history]
@@ -224,13 +236,19 @@ class MobilityAgent:
         off_topic = False
         tool_error_text: str | None = None
         for _round in range(self.max_tool_rounds + 1):
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=1500,
-                system=system_prompt,
-                messages=messages,
-                tools=self.bridge.tools,
-            )
+            if time.monotonic() >= tool_deadline:
+                break
+            try:
+                async with asyncio.timeout_at(tool_deadline):
+                    response = await self.client.messages.create(
+                        model=self.model,
+                        max_tokens=1500,
+                        system=system_prompt,
+                        messages=messages,
+                        tools=self.bridge.tools,
+                    )
+            except TimeoutError:
+                break
             input_tokens += response.usage.input_tokens
             output_tokens += response.usage.output_tokens
             stop_reason = response.stop_reason
@@ -245,8 +263,7 @@ class MobilityAgent:
                             {
                                 "role": "assistant",
                                 "content": [
-                                    block.model_dump(mode="json")
-                                    for block in response.content
+                                    block.model_dump(mode="json") for block in response.content
                                 ],
                             }
                         )
@@ -269,8 +286,7 @@ class MobilityAgent:
                                 {
                                     "role": "assistant",
                                     "content": [
-                                        block.model_dump(mode="json")
-                                        for block in response.content
+                                        block.model_dump(mode="json") for block in response.content
                                     ],
                                 },
                                 {"role": "user", "content": USE_TOOLS_PROMPT},
@@ -283,7 +299,7 @@ class MobilityAgent:
                     text,
                     question,
                     request_time,
-                    tool_error_text,
+                    tool_error_text if not partial_data else None,
                     searched_place,
                     date_line if tools_used else None,
                 )
@@ -307,22 +323,48 @@ class MobilityAgent:
                 }
             )
             tool_results = []
-            for block in tool_blocks:
-                tools_used.append(block.name)
+
+            async def run_tool(block: Any) -> Any:
+                began = time.monotonic()
                 try:
-                    result = await self.bridge.call_tool(block.name, block.input)
+                    async with asyncio.timeout(
+                        min(TOOL_TIMEOUT, max(0, tool_deadline - time.monotonic()))
+                    ):
+                        return await self.bridge.call_tool(block.name, block.input)
+                except TimeoutError:
+                    from mcp.types import CallToolResult
+
+                    return CallToolResult(
+                        content=[],
+                        isError=True,
+                        structuredContent={
+                            "error": "source timed out",
+                            "tool": block.name,
+                            "partial": True,
+                        },
+                    )
                 except Exception:
-                    result = tool_error_result(block.name)
+                    return tool_error_result(block.name)
+                finally:
+                    LOGGER.info(
+                        "tool name=%s duration_ms=%.0f",
+                        block.name,
+                        (time.monotonic() - began) * 1000,
+                    )
+
+            results = await asyncio.gather(*(run_tool(block) for block in tool_blocks))
+            for block, result in zip(tool_blocks, results, strict=True):
+                tools_used.append(block.name)
                 serialized_result = result_text(result)
                 if result.isError:
                     tool_error_text = (
                         ACCESSIBILITY_ERROR
-                        if block.name
-                        in {"find_accessible_parking", "stop_accessibility"}
+                        if block.name in {"find_accessible_parking", "stop_accessibility"}
                         else MOBILITY_ERROR
                     )
-                    serialized_result = result_text(tool_error_result(block.name))
+
                 else:
+                    partial_data.append(serialized_result)
                     serialized_result = localize_tool_result(serialized_result)
                     searched_place = searched_place or _resolved_place(serialized_result)
                     recommended_places = _merge_places(
@@ -333,27 +375,46 @@ class MobilityAgent:
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": _model_result_text(
-                            serialized_result, _item_limit(block.name)
-                        )[:8000],
+                        "content": _model_result_text(serialized_result, _item_limit(block.name))[
+                            :8000
+                        ],
                         "is_error": bool(result.isError),
                     }
                 )
             messages.append({"role": "user", "content": tool_results})
             tool_rounds += 1
 
-        response = await self.client.messages.create(
-            model=self.model,
-            max_tokens=1500,
-            system=system_prompt,
-            messages=[*messages, {"role": "user", "content": FINAL_PROMPT}],
-        )
-        input_tokens += response.usage.input_tokens
-        output_tokens += response.usage.output_tokens
-        stop_reason = response.stop_reason
-        text = "\n".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
+        try:
+            async with asyncio.timeout_at(total_deadline - 0.5):
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=1500,
+                    system=system_prompt,
+                    messages=[
+                        *messages,
+                        {
+                            "role": "user",
+                            "content": (
+                                DEADLINE_PROMPT
+                                if time.monotonic() >= tool_deadline
+                                else FINAL_PROMPT
+                            ),
+                        },
+                    ],
+                )
+            input_tokens += response.usage.input_tokens
+            output_tokens += response.usage.output_tokens
+            stop_reason = response.stop_reason
+            text = "\n".join(
+                block.text for block in response.content if block.type == "text"
+            ).strip()
+        except Exception:
+            if not partial_data:
+                raise
+            text = (
+                "Partial source results (remaining checks could not be completed):\n"
+                + "\n".join(partial_data)[:850]
+            )
         if not tools_used and _is_decline(text):
             text, off_topic = _off_topic_reply(question), True
         elif not tools_used and _looks_factual(text):
@@ -362,7 +423,7 @@ class MobilityAgent:
             text,
             question,
             request_time,
-            tool_error_text,
+            tool_error_text if not partial_data else None,
             searched_place,
             date_line if tools_used else None,
         )
@@ -420,9 +481,7 @@ def _yearless_dates(question: str, now: datetime) -> list[YearlessDate]:
             occurrence = date(now.year, _MONTHS[month_word.casefold()], day)
         except ValueError:
             continue
-        dates.append(
-            YearlessDate(typed, day, month_word, occurrence, occurrence < now.date())
-        )
+        dates.append(YearlessDate(typed, day, month_word, occurrence, occurrence < now.date()))
     return dates
 
 
@@ -502,11 +561,7 @@ def _ungrounded_reply(question: str) -> tuple[str, bool]:
 def _without_unsolicited_corrections(text: str, question: str) -> str:
     if _CORRECTION_REQUEST_PATTERN.search(question):
         return text
-    lines = [
-        line
-        for line in text.splitlines()
-        if not _CORRECTION_LINE_PATTERN.match(line.strip())
-    ]
+    lines = [line for line in text.splitlines() if not _CORRECTION_LINE_PATTERN.match(line.strip())]
     return "\n".join(lines).strip() or EMPTY_ANSWER
 
 
@@ -587,9 +642,7 @@ def _recommended_places(
     return places
 
 
-def _place_kind(
-    tool_name: str, item: dict[str, Any], arguments: dict[str, Any]
-) -> str:
+def _place_kind(tool_name: str, item: dict[str, Any], arguments: dict[str, Any]) -> str:
     if tool_name in {"find_parking", "find_accessible_parking"}:
         if str(arguments.get("purpose", "")).upper() == "BIKE":
             return "bike_parking"
@@ -629,8 +682,7 @@ def _merge_places(
     merged = list(existing)
     for place in incoming:
         if not any(
-            haversine_m(place.lat, place.lon, current.lat, current.lon) <= 50
-            for current in merged
+            haversine_m(place.lat, place.lon, current.lat, current.lon) <= 50 for current in merged
         ):
             merged.append(place)
     return merged
@@ -679,9 +731,7 @@ def _mention_position(text: str, place: RecommendedPlace) -> int | None:
     return min(positions) if positions else None
 
 
-def _places_for_answer(
-    text: str, places: list[RecommendedPlace]
-) -> list[RecommendedPlace]:
+def _places_for_answer(text: str, places: list[RecommendedPlace]) -> list[RecommendedPlace]:
     """Places the answer mentions, in the order it mentions them; else the tool order."""
     normalized_text = text.casefold()
     mentioned = [
@@ -733,9 +783,7 @@ def _default_place_name(kind: str) -> str:
     }.get(kind, "Mobility location")
 
 
-def _with_searched_place(
-    text: str, place: tuple[str, str | None], question: str
-) -> str:
+def _with_searched_place(text: str, place: tuple[str, str | None], question: str) -> str:
     text = "\n".join(
         line for line in text.splitlines() if not line.lstrip().startswith("📍")
     ).strip()

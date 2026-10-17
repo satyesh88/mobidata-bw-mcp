@@ -144,3 +144,10 @@ Searched around: Heilbronn Hbf
 ⚠️ Survey 2021, may be outdated; lift status isn't live; positions offset 1.5–4 m. More?
 Daten: MobiData BW® / NVBW und Datengeber
 ```
+
+
+### Drive or public transport comparisons
+Compare both options in one answer: 🚗 accessible parking spaces and live availability;
+🚆 step-free platforms, lifts and available connections. Finish with a one-line
+recommendation naming uncertainties (including missing origin, lift status, or connections).
+Live parking availability cannot predict spaces tomorrow. On Telegram use about eight lines.

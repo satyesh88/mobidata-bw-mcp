@@ -827,3 +827,128 @@ async def test_agent_returns_clean_off_topic_decline_after_grounding_retry() -> 
 async def test_real_mcp_server_stdio_bridge() -> None:
     async with MCPBridge() as bridge:
         assert any(tool["name"] == "find_parking" for tool in bridge.tools)
+
+@pytest.mark.asyncio
+async def test_parallel_tool_calls_cross_bridge_queue(monkeypatch):
+    import asyncio
+    import time
+    from contextlib import asynccontextmanager
+
+    from mcp.types import CallToolResult
+
+    from mobidata_bw_mcp.telegram_bot import mcp_bridge
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def initialize(self):
+            pass
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[])
+
+        async def call_tool(self, name, arguments):
+            await asyncio.sleep(2)
+            return CallToolResult(content=[], structuredContent={"spaces": 4})
+
+    @asynccontextmanager
+    async def streams(url):
+        yield None, None
+
+    monkeypatch.setattr(mcp_bridge, "open_streams", streams)
+    monkeypatch.setattr(mcp_bridge, "ClientSession", lambda *args: Session())
+    from mobidata_bw_mcp.telegram_bot.agent import MobilityAgent
+
+    async with MCPBridge() as bridge:
+        agent = MobilityAgent(bridge, "model")
+        agent.client.messages.create = AsyncMock(side_effect=[
+            fake_response(
+                FakeBlock("tool_use", id="1", name="parking", input={}),
+                FakeBlock("tool_use", id="2", name="station", input={}),
+            ),
+            fake_response(FakeBlock("text", text="4 spaces; station access unknown.")),
+        ])
+        started = time.monotonic()
+        answer = await agent.answer("Drive or train?", [])
+        assert time.monotonic() - started < 3
+        assert answer.tools_used == ["parking", "station"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deadline", [False, True])
+async def test_slow_source_preserves_partial_answer(monkeypatch, deadline):
+    import asyncio
+
+    from mcp.types import CallToolResult
+
+    from mobidata_bw_mcp.telegram_bot import agent as module
+
+    monkeypatch.setattr(module, "TOOL_TIMEOUT", 1 if deadline else 0.03)
+    monkeypatch.setattr(module, "TOOL_DEADLINE", 0.06 if deadline else 10)
+    cancelled = asyncio.Event()
+
+    async def call(name, arguments):
+        if name == "fast":
+            return CallToolResult(content=[], structuredContent={"spaces": 4})
+        try:
+            await asyncio.sleep(5)
+        finally:
+            cancelled.set()
+
+    bridge = MCPBridge()
+    bridge.call_tool = call
+    agent = module.MobilityAgent(bridge, "model")
+    agent.client.messages.create = AsyncMock(side_effect=[
+        fake_response(
+            FakeBlock("tool_use", id="1", name="fast", input={}),
+            FakeBlock("tool_use", id="2", name="slow", input={}),
+        ),
+        fake_response(FakeBlock("text", text="4 spaces; lifts could not be checked.")),
+    ])
+    answer = await agent.answer("Parking and lifts?", [])
+    assert "4 spaces" in answer.text
+    assert cancelled.is_set()
+    final = agent.client.messages.create.await_args_list[-1].kwargs
+    assert "source timed out" in str(final["messages"])
+    assert '"partial": true' in str(final["messages"])
+    if deadline:
+        assert "tools" not in final
+        assert final["messages"][-1]["content"] == module.DEADLINE_PROMPT
+    else:
+        assert "tools" in final
+
+
+@pytest.mark.asyncio
+async def test_final_model_stall_keeps_received_data(monkeypatch):
+    import asyncio
+
+    from mcp.types import CallToolResult
+
+    from mobidata_bw_mcp.telegram_bot import agent as module
+
+    monkeypatch.setattr(module, "TOOL_DEADLINE", 0.03)
+    monkeypatch.setattr(module, "TOTAL_DEADLINE", 0.6)
+    bridge = MCPBridge()
+    bridge.call_tool = AsyncMock(return_value=CallToolResult(
+        content=[], structuredContent={"parking": "Garage A", "spaces": 4}
+    ))
+    agent = module.MobilityAgent(bridge, "model")
+    count = 0
+
+    async def model(**kwargs):
+        nonlocal count
+        count += 1
+        if count == 1:
+            return fake_response(FakeBlock("tool_use", id="1", name="parking", input={}))
+        await asyncio.sleep(5)
+
+    agent.client.messages.create = AsyncMock(side_effect=model)
+    answer = await agent.answer("Parking and lifts?", [])
+    assert "Garage A" in answer.text
+    assert "remaining checks" in answer.text
+    assert count == 3
+    assert "tools" not in agent.client.messages.create.await_args.kwargs

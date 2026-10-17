@@ -32,7 +32,9 @@ RESET_TEXT = "Conversation and shared location cleared."
 LOCATION_TEXT = "📍 Location saved for 30 minutes. Now ask what’s near you."
 RATE_LIMIT_TEXT = "You’ve reached the demo limit. Please try again in an hour."
 BUDGET_TEXT = "The demo budget for today is used up. Please try again tomorrow."
-TIMEOUT_TEXT = "Sorry, that took too long. Please try a more specific question."
+TIMEOUT_TEXT = (
+    "That took too long. I’ll answer in parts: ask about parking first, then the station."
+)
 ERROR_TEXT = "Sorry, I couldn’t answer that just now. Please try again."
 PRIVATE_TEXT = "This demo only answers in a private chat."
 NOT_ALLOWED_TEXT = "This private demo is not available for this account."
