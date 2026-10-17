@@ -102,7 +102,8 @@ sudo python3 deploy/new-api-key.py alice --owner mobidata-mcp   # prints the key
 sudoedit /etc/mobidata-mcp/keys                                 # delete the line to revoke
 ```
 
-The key file is re-read automatically within a few seconds; no restart is needed.
+The key file is re-read automatically within a few seconds; no restart is needed. When run as root,
+the script makes the file `root:<owner>` with mode 640, so the service can read but not modify it.
 
 ### Updating
 

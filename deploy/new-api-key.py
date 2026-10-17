@@ -27,7 +27,7 @@ def main() -> int:
     parser.add_argument(
         "--owner",
         default="10001",
-        help="user that reads the file when run as root: a name (systemd: mobidata-mcp) or uid",
+        help="group that reads the file when run as root: a name (systemd: mobidata-mcp) or gid",
     )
     args = parser.parse_args()
 
@@ -49,8 +49,10 @@ def main() -> int:
         handle.write(f"{args.name}:{digest}\n")
     os.chmod(path, 0o600)
     if hasattr(os, "geteuid") and os.geteuid() == 0:
-        owner = int(args.owner) if args.owner.isdigit() else args.owner
-        shutil.chown(path, user=owner, group=owner)
+        # Root owns the file; the service reads it through the group and cannot modify it.
+        group = int(args.owner) if args.owner.isdigit() else args.owner
+        shutil.chown(path, user="root", group=group)
+        os.chmod(path, 0o640)
 
     print(token)
     print(f"Key for {args.name!r} added. Shown once; it cannot be recovered.", file=sys.stderr)
