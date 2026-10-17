@@ -1,0 +1,32 @@
+# One container, published on loopback only. A reverse proxy terminates TLS in front of it.
+# Set MOBIDATA_MCP_ALLOWED_HOSTS (the public host name) in a .env file next to this file.
+services:
+  mobidata-mcp:
+    build: .
+    image: mobidata-bw-mcp:latest
+    container_name: mobidata-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      MOBIDATA_MCP_ALLOWED_HOSTS: ${MOBIDATA_MCP_ALLOWED_HOSTS:-}
+      MOBIDATA_MCP_KEYS_FILE: /etc/mobidata-mcp/keys
+      OPENROUTESERVICE_API_KEY: ${OPENROUTESERVICE_API_KEY:-}
+    volumes:
+      - /etc/mobidata-mcp:/etc/mobidata-mcp:ro
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

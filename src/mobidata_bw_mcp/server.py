@@ -1,9 +1,11 @@
 import argparse
+import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from .models import BBox, LocationInput, RoutePoint, Vehicle
 from .tools import (
@@ -29,15 +31,26 @@ async def lifespan(_server: FastMCP):
     yield
 
 
-def create_server(*, port: int = 8000) -> FastMCP:
+def create_server(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    stateless_http: bool = False,
+    transport_security: TransportSecuritySettings | None = None,
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO",
+) -> FastMCP:
     mcp = FastMCP(
         "MobiData BW",
         instructions=(
             "Use opinionated find_* tools for mobility questions. Report source, licence, "
             "timestamp, freshness, and warnings from every result. Traffic-sign data is advisory."
         ),
+        host=host,
         port=port,
-        lifespan=lifespan,
+        stateless_http=stateless_http,
+        transport_security=transport_security,
+        log_level=log_level,
+        lifespan=None if stateless_http else lifespan,
     )
 
     mcp.tool()(discovery.search_datasets)
@@ -112,11 +125,22 @@ def main() -> None:
         "--transport",
         choices=("stdio", "http", "streamable-http"),
         default="stdio",
+        help="stdio (default) or hosted streamable HTTP at /mcp with API-key auth",
     )
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default=os.getenv("MOBIDATA_MCP_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("MOBIDATA_MCP_PORT", "8000")))
+    parser.add_argument(
+        "--insecure-no-auth",
+        action="store_true",
+        help="HTTP without API keys. For local testing only.",
+    )
     args = parser.parse_args()
-    transport = "streamable-http" if args.transport == "http" else args.transport
-    create_server(port=args.port).run(transport=transport)
+    if args.transport == "stdio":
+        create_server().run(transport="stdio")
+    else:
+        from .http_app import serve
+
+        serve(args.host, args.port, args.insecure_no_auth)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,18 @@
+# Example only. Replace <DOMAIN> with your host name. Caddy obtains the certificate itself.
+# Add this as a new site block and reload (`caddy reload`), which does not drop connections.
+
+<DOMAIN> {
+	request_body {
+		max_size 1MB
+	}
+
+	@mcp path /mcp /health
+	handle @mcp {
+		reverse_proxy 127.0.0.1:8765 {
+			flush_interval -1
+		}
+	}
+	handle {
+		respond 404
+	}
+}

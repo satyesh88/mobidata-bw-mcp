@@ -1,3 +1,4 @@
+import asyncio
 import re
 from typing import Any
 
@@ -34,6 +35,7 @@ SIGN_CAVEATS = [
 ]
 _tree: STRtree | None = None
 _features: list[dict[str, Any]] = []
+_index_lock = asyncio.Lock()
 
 
 def normalized_code(value: str | None) -> str | None:
@@ -60,9 +62,12 @@ def sign_unit(value: str | None) -> str | None:
 async def sign_index() -> tuple[STRtree, list[dict[str, Any]]]:
     global _tree, _features
     if _tree is None:
-        payload = await static_files.signs()
-        _features = [item for item in payload.get("features", []) if item.get("geometry")]
-        _tree = STRtree([shape(item["geometry"]) for item in _features])
+        async with _index_lock:
+            if _tree is None:
+                payload = await static_files.signs()
+                features = [item for item in payload.get("features", []) if item.get("geometry")]
+                _features = features
+                _tree = STRtree([shape(item["geometry"]) for item in features])
     return _tree, _features
 
 

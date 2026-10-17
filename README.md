@@ -19,7 +19,7 @@ uv sync
 uv run mobidata-bw-mcp
 ```
 
-Streamable HTTP is available for development with `uv run mobidata-bw-mcp --transport http --port 8000`. Ask NVBW about fair use before publicly hosting it.
+Streamable HTTP (`--transport http`) requires an API key (see [deploy/README.md](deploy/README.md), which also covers the Docker deployment); use `--insecure-no-auth` for local testing only. Ask NVBW about fair use before publicly hosting it.
 
 ### Claude Desktop
 

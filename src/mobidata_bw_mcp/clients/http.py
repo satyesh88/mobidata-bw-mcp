@@ -52,7 +52,8 @@ class HttpClient:
                     ):
                         await asyncio.sleep(0.35)
                         continue
-                    logger.exception("Source request failed: %s", url)
+                    # No traceback: httpx errors embed the full URL, including user locations.
+                    logger.warning("Source request failed: %s (%s)", url, type(exc).__name__)
                     raise SourceError(f"MobiData source request failed for {url}") from exc
         raise SourceError(f"MobiData source request failed for {url}")
 
@@ -67,7 +68,7 @@ class HttpClient:
         try:
             return response.json()
         except ValueError as exc:
-            logger.exception("Invalid JSON from %s", url)
+            logger.warning("Invalid JSON from %s", url)
             raise SourceError(f"MobiData source returned invalid JSON for {url}") from exc
 
     async def get_text(self, url: str, params: dict[str, Any] | None = None) -> str:
