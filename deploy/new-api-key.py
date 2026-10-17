@@ -13,6 +13,7 @@ import hashlib
 import os
 import re
 import secrets
+import shutil
 import sys
 from pathlib import Path
 
@@ -23,7 +24,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("name", help="label for the key holder, e.g. alice (letters, digits, _.-)")
     parser.add_argument("--file", default="/etc/mobidata-mcp/keys", type=Path)
-    parser.add_argument("--uid", type=int, default=10001, help="container user that reads the file")
+    parser.add_argument(
+        "--owner",
+        default="10001",
+        help="user that reads the file when run as root: a name (systemd: mobidata-mcp) or uid",
+    )
     args = parser.parse_args()
 
     if not NAME.match(args.name):
@@ -44,7 +49,8 @@ def main() -> int:
         handle.write(f"{args.name}:{digest}\n")
     os.chmod(path, 0o600)
     if hasattr(os, "geteuid") and os.geteuid() == 0:
-        os.chown(path, args.uid, args.uid)
+        owner = int(args.owner) if args.owner.isdigit() else args.owner
+        shutil.chown(path, user=owner, group=owner)
 
     print(token)
     print(f"Key for {args.name!r} added. Shown once; it cannot be recovered.", file=sys.stderr)

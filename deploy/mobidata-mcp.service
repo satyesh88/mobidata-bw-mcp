@@ -1,0 +1,51 @@
+# Install as /etc/systemd/system/mobidata-mcp.service (see deploy/README.md).
+# Host names and keys are not stored here: put MOBIDATA_MCP_ALLOWED_HOSTS=<DOMAIN> in
+# /etc/mobidata-mcp/env and the API keys in /etc/mobidata-mcp/keys.
+[Unit]
+Description=MobiData BW MCP server (hosted, API-key protected)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mobidata-mcp
+Group=mobidata-mcp
+WorkingDirectory=/opt/mobidata-bw-mcp
+EnvironmentFile=-/etc/mobidata-mcp/env
+Environment=MOBIDATA_MCP_KEYS_FILE=/etc/mobidata-mcp/keys
+ExecStart=/opt/mobidata-bw-mcp/venv/bin/mobidata-bw-mcp --transport http --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=5
+
+# Resource limits; the OOM killer picks this service before other workloads on the host.
+MemoryMax=1G
+MemorySwapMax=0
+CPUQuota=100%
+TasksMax=128
+Nice=10
+OOMScoreAdjust=500
+
+# Sandbox
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
