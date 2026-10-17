@@ -37,7 +37,7 @@ async def search_datasets(
             {
                 "title": dataset.get("title"),
                 "slug": dataset.get("name"),
-                "description": (dataset.get("notes") or "")[:500],
+                "description": (dataset.get("notes") or "")[:160],
                 "licence": licence,
                 "licence_missing": not bool(licence),
                 "last_modified": dataset.get("metadata_modified"),
