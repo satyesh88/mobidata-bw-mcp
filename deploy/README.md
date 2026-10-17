@@ -29,7 +29,8 @@ addresses); configure those to match your retention policy and tell your users.
 ## Server setup: systemd (no Docker)
 
 Requirements: Linux with systemd, `python3` (3.11 or newer) with the `venv` module, `git`, a reverse
-proxy that can obtain a TLS certificate, and a DNS record for `<DOMAIN>`. Run as root.
+proxy that can obtain a TLS certificate, and a DNS record for `<DOMAIN>`. Run as root. For a private
+repository, clone over SSH with a read-only deploy key (see [UPDATING.md](UPDATING.md)).
 
 ```bash
 # 1. Unprivileged service user and code
@@ -59,9 +60,8 @@ The unit applies `MemoryMax=1G`, `NoNewPrivileges`, `ProtectSystem=strict`, a pr
 traffic-sign data (roughly 30 to 60 seconds, up to about 700 MB of memory while it builds).
 `/health` answers immediately.
 
-Update: `cd /opt/mobidata-bw-mcp && git pull && venv/bin/pip install --require-hashes -r
-deploy/requirements.txt && venv/bin/pip install --no-deps . && systemctl restart mobidata-mcp`.
-Logs: `journalctl -u mobidata-mcp`.
+Updating a running install, rollbacks and the private-repository deploy key are in
+[UPDATING.md](UPDATING.md). Logs: `journalctl -u mobidata-mcp`.
 
 ## Server setup: Docker
 
