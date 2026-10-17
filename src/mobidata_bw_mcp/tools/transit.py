@@ -37,7 +37,9 @@ async def find_transit(
                         "item_type": item_type,
                         "id": props.get("stop_id") or props.get("station_id"),
                         "name": props.get("stop_name") or props.get("station_name"),
-                        "wheelchair_boarding": props.get("wheelchair_boarding"),
+                        "wheelchair_boarding": gtfs.wheelchair_status(
+                            props.get("wheelchair_boarding")
+                        ),
                         "routes": props.get("routes"),
                         "lat": lat,
                         "lon": lon,
@@ -70,7 +72,8 @@ async def get_departures(
             (time.perf_counter() - started) * 1000,
         )
         return {
-            "error": "source_timeout", "partial": True,
+            "error": "source_timeout",
+            "partial": True,
             "message": "The timetable source didn’t respond.",
         }
 
@@ -138,7 +141,9 @@ async def _get_departures(
                 "stop_id": record.get("stop_id"),
                 "stop_name": record.get("stop_name"),
                 "station_name": record.get("station_name"),
-                "wheelchair_accessible": record.get("wheelchair_accessible"),
+                "wheelchair_accessible": gtfs.wheelchair_status(
+                    record.get("wheelchair_accessible")
+                ),
             }
         )
         for record in records

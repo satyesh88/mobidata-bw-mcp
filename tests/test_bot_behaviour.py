@@ -243,7 +243,7 @@ def test_button_label_is_the_facility_name_or_the_street_for_generic_names() -> 
 
     assert keyboard is not None
     assert [row[0].text for row in keyboard.inline_keyboard] == [
-        "🧭 Parkhaus Hauptbahnhof",
+        "🧭 Parkhaus Hbf",
         "🧭 Kaiserstraße 12",
         "🧭 Bahnhofstraße 5",
     ]
@@ -549,3 +549,18 @@ def test_bahnhof_west_live_survey_coordinates_without_invented_address():
     assert (selected.lat, selected.lon) == (49.1425348, 9.2171518)
     assert selected.address == "Bahnhof West"
     assert "Hauptbahnhof" not in selected.address
+
+
+def test_short_button_names_cap_entire_label_at_thirty_characters():
+    keyboard = navigation_keyboard([
+        place('Heilbronn Hauptbahnhof', None),
+        place('A very long facility name which does not fit the button', None),
+    ])
+    labels = [row[0].text for row in keyboard.inline_keyboard]
+    assert labels[0] == '🧭 Heilbronn Hbf'
+    assert all(len(label) <= 30 for label in labels)
+    assert labels[1].endswith('…')
+    assert 'no accessibility info in the timetable' in agent_module.SYSTEM_PROMPT
+    assert 'Never mention tool names, internal queries, retries, or per-platform query details' in (
+        agent_module.SYSTEM_PROMPT
+    )

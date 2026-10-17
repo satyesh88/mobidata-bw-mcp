@@ -6,6 +6,7 @@ import time
 
 from .clients import bfrk, geocode, gtfs, parkapi
 from .tools import signs
+from .version import log_startup
 
 LOG = logging.getLogger(__name__)
 BFRK_FILES = (
@@ -28,6 +29,7 @@ async def _parking(name: str) -> None:
 
 
 async def prewarm() -> None:
+    log_startup("mobidata-mcp")
     started = time.monotonic()
 
     async def warm(awaitable) -> None:

@@ -226,3 +226,30 @@ async def test_stop_selection_normalizes_hbf_and_prefers_spnv(
     assert mode == "SPNV"
     assert stop["HST_DHID"] == "rail:1"
     assert distance is None
+
+
+def test_heilbronn_csv_has_no_explicit_edge_to_track_mapping():
+    import json
+    from pathlib import Path
+
+    joined = json.loads((Path(__file__).parent / "fixtures/bfrk/heilbronn_hbf.json").read_text())[
+        "bfrk"
+    ]
+    assert len(joined["Haltesteig"]) == 7
+    assert all(row["STEIG_Name"] == "Hauptbahnhof" for row in joined["Haltesteig"])
+    assert all(accessibility._platform_identifiers(row) == set() for row in joined["Haltesteig"])
+    platforms = accessibility._platform_access(joined)
+    assert all(row["step_free"] == "unknown" for row in platforms)
+    assert {row["platform"] for row in platforms} == {"Hauptbahnhof"}
+
+
+def test_edge_suffix_and_arbitrary_numbers_are_never_track_labels():
+    for name in ("Hauptbahnhof", "Bahnsteigkante 4", "Eingang 4", "4"):
+        assert (
+            accessibility._platform_identifiers({"ID": "de:test:4:4", "STEIG_Name": name}) == set()
+        )
+    assert accessibility._platform_identifiers({"ID": "de:test:4:4"}) == set()
+    assert accessibility._connection_identifiers({"Verbindungsfunktion": "Gl 4"}) == {"track:4"}
+    assert accessibility._connection_identifiers({"Verbindungsfunktion": "BSTG 4"}) == {
+        "platform:4"
+    }

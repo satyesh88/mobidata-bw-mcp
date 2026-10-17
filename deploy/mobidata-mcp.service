@@ -14,7 +14,7 @@ EnvironmentFile=-/etc/mobidata-mcp/env
 Environment=MOBIDATA_MCP_KEYS_FILE=/etc/mobidata-mcp/keys
 # Load the pulled source, just like mobidata-bot, rather than an older installed wheel.
 Environment=PYTHONPATH=/opt/mobidata-bw-mcp/src PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/mobidata-bw-mcp/venv/bin/mobidata-bw-mcp --transport http --host 127.0.0.1 --port 8765
+ExecStart=/opt/mobidata-bw-mcp/venv/bin/python -m mobidata_bw_mcp.server --transport http --host 127.0.0.1 --port 8765
 Restart=on-failure
 RestartSec=5
 

@@ -22,7 +22,14 @@ from telegram.ext import (
     filters,
 )
 
-from .agent import MobilityAgent, RecommendedPlace, place_label, recommended_place
+from ..version import log_startup
+from .agent import (
+    MobilityAgent,
+    RecommendedPlace,
+    place_label,
+    recommended_place,
+    short_place_label,
+)
 from .formatting import answer_html
 from .limits import DailyBudget, HourlyRateLimiter
 from .mcp_bridge import MCPBridge
@@ -70,7 +77,7 @@ def navigation_keyboard(
         return None
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(f"🧭 {place_label(place)}"[:64], url=navigation_url(place))]
+            [InlineKeyboardButton(f"🧭 {short_place_label(place)}", url=navigation_url(place))]
             for place in places[:3]
         ]
     )
@@ -179,6 +186,7 @@ class BotHandlers:
         self._log_salt = secrets.token_bytes(16)
 
     async def startup(self, _application: Application) -> None:
+        log_startup("mobidata-bot")
         await self.bridge.start()
         self.agent = MobilityAgent(
             self.bridge,

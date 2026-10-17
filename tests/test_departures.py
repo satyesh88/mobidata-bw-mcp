@@ -47,34 +47,42 @@ async def test_departure_cache_hit_under_100ms_and_exact_windows(monkeypatch):
 
 
 async def test_stop_lookup_cached_and_parent_expanded(monkeypatch):
-    source = AsyncMock(side_effect=[
-        [{"stop_id": "de:1_Parent", "parent_station": None},
-         {"stop_id": "de:1", "parent_station": "de:1_Parent"}],
-        [{"stop_id": "de:1"}, {"stop_id": "de:1:2"}],
-    ])
+    source = AsyncMock(
+        side_effect=[
+            [
+                {"stop_id": "de:1_Parent", "parent_station": None},
+                {"stop_id": "de:1", "parent_station": "de:1_Parent"},
+            ],
+            [{"stop_id": "de:1"}, {"stop_id": "de:1:2"}],
+        ]
+    )
     monkeypatch.setattr(gtfs.http, "get_json", source)
-    assert await gtfs.resolve_stop_ids("Heilbronn Hbf") == [
-        "de:1_Parent", "de:1", "de:1:2"
-    ]
-    assert await gtfs.resolve_stop_ids("heilbronn hbf") == [
-        "de:1_Parent", "de:1", "de:1:2"
-    ]
+    assert await gtfs.resolve_stop_ids("Heilbronn Hbf") == ["de:1_Parent", "de:1", "de:1:2"]
+    assert await gtfs.resolve_stop_ids("heilbronn hbf") == ["de:1_Parent", "de:1", "de:1:2"]
     assert source.await_count == 2
-    assert source.await_args_list[0].args[1]["stop_name"] == "ilike.Heilbronn Hauptbahnhof"
+    assert (
+        "stop_name.ilike.Heilbronn Hbf/Willy-Brandt-Pl.*"
+        in (source.await_args_list[0].args[1]["or"])
+    )
 
 
 async def test_candidate_trips_narrow_view_and_keep_midnight_times(monkeypatch):
-    source = AsyncMock(side_effect=[
-        [{"trip_id": "overnight"}, {"trip_id": "today"}, {"trip_id": "tomorrow"}],
-        [{"t_departure": "2026-10-20T00:15:00+02:00", "stop_id": "de:1"}],
-    ])
+    source = AsyncMock(
+        side_effect=[
+            [{"trip_id": "overnight"}, {"trip_id": "today"}, {"trip_id": "tomorrow"}],
+            [{"t_departure": "2026-10-20T00:15:00+02:00", "stop_id": "de:1"}],
+        ]
+    )
     monkeypatch.setattr(gtfs.http, "get_json", source)
     params = {
         "_start": WHEN.replace(hour=23, minute=30).isoformat(),
-        "stop_id": 'in.("de:1")', "date": "eq.2026-10-19",
-        "select": gtfs.COLUMNS, "limit": 10, "order": "t_departure",
+        "stop_id": 'in.("de:1")',
+        "date": "eq.2026-10-19",
+        "select": gtfs.COLUMNS,
+        "limit": 10,
+        "order": "t_departure",
         "and": "(t_departure.gte.2026-10-19T23:30:00+02:00,"
-               "t_departure.lt.2026-10-20T01:00:00+02:00)",
+        "t_departure.lt.2026-10-20T01:00:00+02:00)",
     }
     result = await gtfs.departures(params)
     assert len(result) == 1
@@ -107,9 +115,7 @@ async def test_stop_lookup_expires_after_24_hours(monkeypatch):
     from cachetools import TTLCache
 
     now = [0.0]
-    monkeypatch.setattr(gtfs, "_stop_cache", TTLCache(
-        maxsize=10, ttl=86400, timer=lambda: now[0]
-    ))
+    monkeypatch.setattr(gtfs, "_stop_cache", TTLCache(maxsize=10, ttl=86400, timer=lambda: now[0]))
     source = AsyncMock(return_value=[{"stop_id": "de:1", "parent_station": None}])
     monkeypatch.setattr(gtfs.http, "get_json", source)
     await gtfs.resolve_stop_ids("Heilbronn Hbf")
@@ -125,9 +131,9 @@ async def test_departure_cache_expires_after_ten_minutes(monkeypatch):
     from cachetools import TTLCache
 
     now = [0.0]
-    monkeypatch.setattr(gtfs, "_departure_cache", TTLCache(
-        maxsize=10, ttl=600, timer=lambda: now[0]
-    ))
+    monkeypatch.setattr(
+        gtfs, "_departure_cache", TTLCache(maxsize=10, ttl=600, timer=lambda: now[0])
+    )
     monkeypatch.setattr(gtfs, "resolve_stop_ids", AsyncMock(return_value=["de:1"]))
     source = AsyncMock(return_value=[])
     monkeypatch.setattr(gtfs, "departures", source)
@@ -142,22 +148,26 @@ async def test_departure_cache_expires_after_ten_minutes(monkeypatch):
 
 async def test_all_platforms_in_one_timetable_request_without_retries(monkeypatch):
     params = {
-        "_start": WHEN.isoformat(), "stop_id": 'in.("de:1:1","de:1:4")',
-        "date": "eq.2026-10-19", "select": gtfs.COLUMNS, "limit": 10,
+        "_start": WHEN.isoformat(),
+        "stop_id": 'in.("de:1:1","de:1:4")',
+        "date": "eq.2026-10-19",
+        "select": gtfs.COLUMNS,
+        "limit": 10,
         "order": "t_departure",
         "and": "(t_departure.gte.2026-10-19T09:00:00+02:00,"
-               "t_departure.lt.2026-10-19T10:30:00+02:00)",
+        "t_departure.lt.2026-10-19T10:30:00+02:00)",
     }
-    source = AsyncMock(side_effect=[
-        [{"trip_id": f"trip{i}"} for i in range(20)],
-        [{"trip_id": f"trip{i}"} for i in range(20, 35)],
-        [],
-    ])
+    source = AsyncMock(
+        side_effect=[
+            [{"trip_id": f"trip{i}"} for i in range(20)],
+            [{"trip_id": f"trip{i}"} for i in range(20, 35)],
+            [],
+        ]
+    )
     monkeypatch.setattr(gtfs.http, "get_json", source)
     await gtfs.departures(params)
     views = [
-        call for call in source.await_args_list
-        if call.args[0].endswith("arrivals_departures")
+        call for call in source.await_args_list if call.args[0].endswith("arrivals_departures")
     ]
     assert len(views) == 1
     assert views[0].args[1]["stop_id"] == params["stop_id"]
@@ -177,3 +187,105 @@ async def test_http_timeout_returns_source_timeout_without_empty_departures(monk
     assert "count" not in result and "items" not in result
     assert "published" not in str(result)
     request.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0, "unknown"),
+        ("0", "unknown"),
+        (1, "accessible"),
+        ("1", "accessible"),
+        (2, "not_accessible"),
+        ("2", "not_accessible"),
+        (None, "unknown"),
+        ("no_info_or_inherit", "unknown"),
+        ("accessible", "accessible"),
+        ("not_accessible", "not_accessible"),
+    ],
+)
+def test_gtfs_wheelchair_flags(value, expected):
+    assert gtfs.wheelchair_status(value) == expected
+
+
+async def test_departures_normalizes_all_three_wheelchair_flags(monkeypatch):
+    monkeypatch.setattr(gtfs, "resolve_stop_ids", AsyncMock(return_value=["de:1"]))
+    monkeypatch.setattr(
+        gtfs,
+        "departures",
+        AsyncMock(
+            return_value=[
+                {"route_short_name": "S4", "wheelchair_accessible": flag} for flag in (0, 1, 2)
+            ]
+        ),
+    )
+    result = await transit.get_departures("Heilbronn Hbf", from_time=WHEN)
+    assert [row["wheelchair_accessible"] for row in result["items"]] == [
+        "unknown",
+        "accessible",
+        "not_accessible",
+    ]
+
+
+async def test_transit_stops_normalize_wheelchair_boarding(monkeypatch):
+    from mobidata_bw_mcp.models import Location
+
+    monkeypatch.setattr(
+        transit.geocode,
+        "resolve",
+        AsyncMock(return_value=Location(lat=49.14, lon=9.20, label="Station")),
+    )
+    features = [
+        {
+            "properties": {"stop_id": str(flag), "wheelchair_boarding": flag},
+            "geometry": {"type": "Point", "coordinates": [9.20, 49.14]},
+        }
+        for flag in (0, 1, 2)
+    ]
+    monkeypatch.setattr(
+        transit.wfs,
+        "features",
+        AsyncMock(
+            side_effect=[
+                {"features": features},
+                {"features": []},
+            ]
+        ),
+    )
+    result = await transit.find_transit("Station")
+    assert [row["wheelchair_boarding"] for row in result["items"]] == [
+        "unknown",
+        "accessible",
+        "not_accessible",
+    ]
+
+
+async def test_heilbronn_lookup_includes_verified_willy_brandt_complex(monkeypatch):
+    import json
+    from pathlib import Path
+
+    rows = json.loads((Path(__file__).parent / "fixtures/bfrk/heilbronn_hbf.json").read_text())[
+        "gtfs"
+    ]
+    named = [
+        row
+        for row in rows
+        if row["stop_name"] == "Heilbronn Hauptbahnhof"
+        or row["stop_name"].startswith("Heilbronn Hbf/Willy-Brandt-Pl.")
+    ]
+    children = [row for row in rows if row["parent_station"]]
+    source = AsyncMock(side_effect=[named, children])
+    monkeypatch.setattr(gtfs.http, "get_json", source)
+    ids = await gtfs.resolve_stop_ids("Heilbronn Hbf")
+    assert set(ids) == {row["stop_id"] for row in rows}
+    assert len(ids) == 17
+    assert "de:08121:1114:3:1" in ids
+    assert "de:08121:1114:3:2" in ids
+    assert "de:08121:1114:3:3" in ids
+    assert "de:08121:1115:0:1" in ids
+    assert "de:08121:1116:0:0" in ids
+    assert await gtfs.resolve_stop_ids("Heilbronn Hbf") == ids
+    assert source.await_count == 2
+    # An explicit platform still means that platform, without implicit expansion.
+    assert await gtfs.resolve_stop_ids("de:08121:26:4:4") == ["de:08121:26:4:4"]
+    assert source.await_count == 2

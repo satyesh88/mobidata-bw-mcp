@@ -49,7 +49,10 @@ Telegram channel rules (these override anything above):
   Never infer that no departures are published from an error. Do not retry for a platform.
 - For public transport apps in Baden-Württemberg suggest DB Navigator or bwegt, never VRR.
 - Do not write the "Searched around" line yourself; the application adds it.
-- Never mention tool names or internal implementation.
+- Never mention tool names, internal queries, retries, or per-platform query details.
+- Timetable accessibility unknown means "no accessibility info in the timetable";
+  never interpret 0 or a missing flag as not wheelchair accessible.
+- Never infer track numbers from BFRK platform-edge IDs. Only use explicit track labels.
 - All times are Europe/Berlin local time, written HH:MM. Tool timestamps are already converted;
   never write UTC or Z.
 - Name each recommended place exactly as the data names it; if that name is generic (for example
@@ -751,6 +754,12 @@ def place_label(place: RecommendedPlace) -> str:
     if is_generic_name(place.name):
         return place.street or place.address
     return place.name
+
+
+def short_place_label(place: RecommendedPlace) -> str:
+    label = re.sub(r"\bHauptbahnhof\b", "Hbf", place_label(place), flags=re.IGNORECASE)
+    label = label.split(",", 1)[0].strip()
+    return label if len(label) <= 28 else label[:27].rstrip() + "…"
 
 
 def _mention_position(text: str, place: RecommendedPlace) -> int | None:

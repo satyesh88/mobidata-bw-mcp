@@ -1,0 +1,468 @@
+{
+  "sources": {
+    "Haltesteig": "https://www.nvbw.de/fileadmin/user_upload/service/open_data/haltestellen/SPNV/BFRK_Haltesteig.csv",
+    "Aufzug": "https://www.nvbw.de/fileadmin/user_upload/service/open_data/haltestellen/SPNV/BFRK_Aufzug.csv",
+    "Rampe": "https://www.nvbw.de/fileadmin/user_upload/service/open_data/haltestellen/SPNV/BFRK_Rampe.csv",
+    "Treppe": "https://www.nvbw.de/fileadmin/user_upload/service/open_data/haltestellen/SPNV/BFRK_Treppe.csv"
+  },
+  "bfrk": {
+    "Haltesteig": [
+      {
+        "ID": "de:08121:26:4:5",
+        "HST_DHID": "de:08121:26",
+        "STEIG_Name": "Hauptbahnhof",
+        "Erfassungsdatum": "02.06.2021"
+      },
+      {
+        "ID": "de:08121:26:5:6",
+        "HST_DHID": "de:08121:26",
+        "STEIG_Name": "Hauptbahnhof",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "de:08121:26:5:7",
+        "HST_DHID": "de:08121:26",
+        "STEIG_Name": "Hauptbahnhof",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "de:08121:26:1:1",
+        "HST_DHID": "de:08121:26",
+        "STEIG_Name": "Hauptbahnhof",
+        "Erfassungsdatum": "02.06.2021"
+      },
+      {
+        "ID": "de:08121:26:3:2",
+        "HST_DHID": "de:08121:26",
+        "STEIG_Name": "Hauptbahnhof",
+        "Erfassungsdatum": "02.06.2021"
+      },
+      {
+        "ID": "de:08121:26:3:3",
+        "HST_DHID": "de:08121:26",
+        "STEIG_Name": "Hauptbahnhof",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "de:08121:26:4:4",
+        "HST_DHID": "de:08121:26",
+        "STEIG_Name": "Hauptbahnhof",
+        "Erfassungsdatum": "02.06.2021"
+      }
+    ],
+    "Aufzug": [
+      {
+        "ID": "INFRA-de:08121:26-AUFZUG-6",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "BuGa= Brücke, Süd-Nord-Verbindung über Gleise",
+        "Erfassungsdatum": "28.10.2024"
+      },
+      {
+        "ID": "INFRA-de:08121:26-AUFZUG-1",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Bahnhofsgebäude zu Unterführung",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-AUFZUG-5",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Nordseite auf BuGa-Brücke, zum BhfGeb",
+        "Erfassungsdatum": "28.10.2024"
+      },
+      {
+        "ID": "INFRA-de:08121:26-AUFZUG-2",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu Gl 3/4",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-AUFZUG-3",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu Gl 6/7",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-AUFZUG-4",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu BSTG 4/5",
+        "Erfassungsdatum": "01.06.2021"
+      }
+    ],
+    "Rampe": [
+      {
+        "ID": "INFRA-de:08121:26-RAMPE-1",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Neigung eigentlich 29,6!",
+        "Erfassungsdatum": "02.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-RAMPE-2",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Bahnhofsgebäude bei Tür 1 zu BSTG 1",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-RAMPE-3",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Bahnhofsgebäude bei Tür 2 zu Gl1",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-RAMPE-4",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Taxistand bei B+R zu Gl 1",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-RAMPE-5",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Bahnsteig 1 Ri Bahnhofsmission/Behindertentoilette",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-RAMPE-6",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Bahnsteig 1 zu BehindertenWC/Info",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-RAMPE-7",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "verschlossene Tür zu BSTG 1 (hier wohl Mitarbeiterraum DB Regio)",
+        "Erfassungsdatum": "01.06.2021"
+      }
+    ],
+    "Treppe": [
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-1",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "vor Tür von Abellio",
+        "Erfassungsdatum": "02.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-2",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Zwischenebene bei WC zu Gl 1",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-3",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Bahnsteig 1 zur Bahnhofsmission",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-15",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Süd-Noed-Verbindung östlich vom BhfGeb",
+        "Erfassungsdatum": "28.10.2024"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-4",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Bahnsteig zu Tür von Informationsstelle",
+        "Erfassungsdatum": "02.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-14",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Nord-Süd-Verbindung östlich vom BhfGeb",
+        "Erfassungsdatum": "28.10.2024"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-5",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu Gl 2/3",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-6",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu Gl 2/3 bei Aufzug",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-7",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu BSTG 4/5",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-8",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu Gl 4/5 bei Aufzug",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-9",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu GL 6/7",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-10",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Unterführung zu GL 6/7",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-11",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "von Unterführung zu Zwischenebene, von da weiter zu Bahnhofsgebäude/WC/Gl1",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-12",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "Zwischenebene weiter zu Bahnhofsgebäude",
+        "Erfassungsdatum": "01.06.2021"
+      },
+      {
+        "ID": "INFRA-de:08121:26-TREPPE-13",
+        "HST_DHID": "de:08121:26",
+        "Verbindungsfunktion": "vor Eingang Ost",
+        "Erfassungsdatum": "02.06.2021"
+      }
+    ]
+  },
+  "gtfs": [
+    {
+      "stop_id": "de:08121:26_Parent",
+      "stop_name": "Heilbronn Hauptbahnhof",
+      "parent_station": null,
+      "location_type": "station",
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207974,
+          49.142925
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:26",
+      "stop_name": "Heilbronn Hauptbahnhof",
+      "parent_station": "de:08121:26_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207974,
+          49.142925
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:26:1:1",
+      "stop_name": "Heilbronn Hauptbahnhof Gleis 1",
+      "parent_station": "de:08121:26_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207642,
+          49.14288
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:26:3:2",
+      "stop_name": "Heilbronn Hauptbahnhof Gleis 2",
+      "parent_station": "de:08121:26_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207615,
+          49.142933
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:26:3:3",
+      "stop_name": "Heilbronn Hauptbahnhof Gleis 3",
+      "parent_station": "de:08121:26_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207561,
+          49.14302
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:26:4:4",
+      "stop_name": "Heilbronn Hauptbahnhof Gleis 4",
+      "parent_station": "de:08121:26_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207516,
+          49.143063
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:26:4:5",
+      "stop_name": "Heilbronn Hauptbahnhof Gleis 5",
+      "parent_station": "de:08121:26_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207462,
+          49.14315
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:26:5:6",
+      "stop_name": "Heilbronn Hauptbahnhof Gleis 6",
+      "parent_station": "de:08121:26_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207436,
+          49.143185
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:26:5:7",
+      "stop_name": "Heilbronn Hauptbahnhof Gleis 7",
+      "parent_station": "de:08121:26_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.207373,
+          49.14329
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:1114_Parent",
+      "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl.",
+      "parent_station": null,
+      "location_type": "station",
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.20845,
+          49.14276
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:1114",
+      "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl.",
+      "parent_station": "de:08121:1114_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.20845,
+          49.14276
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:1114:2:0",
+      "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl.",
+      "parent_station": "de:08121:1114_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.208621,
+          49.14251
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:1115:0:1",
+      "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl. (Steig A)",
+      "parent_station": null,
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.208747,
+          49.142467
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:1116:0:0",
+      "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl. (Steig B)",
+      "parent_station": null,
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.208594,
+          49.142487
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:1114:3:1",
+      "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl. Gleis 1",
+      "parent_station": "de:08121:1114_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.208351,
+          49.14262
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:1114:3:2",
+      "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl. Gleis 2",
+      "parent_station": "de:08121:1114_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.208487,
+          49.142593
+        ]
+      },
+      "wheelchair_boarding": null
+    },
+    {
+      "stop_id": "de:08121:1114:3:3",
+      "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl. Gleis 3",
+      "parent_station": "de:08121:1114_Parent",
+      "location_type": null,
+      "stop_loc": {
+        "type": "Point",
+        "coordinates": [
+          9.208487,
+          49.14254
+        ]
+      },
+      "wheelchair_boarding": null
+    }
+  ]
+}

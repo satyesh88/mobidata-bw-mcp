@@ -14,6 +14,8 @@ BFRK_CAVEATS = [
     "outdated; check the survey date for each item.",
     "BFRK object coordinates are deliberately offset by approximately 1.5 to 4 metres.",
     "Elevator details describe surveyed infrastructure, not live operational status.",
+    "Surveyed platform-edge IDs are not track numbers. Do not infer tracks from ID suffixes; "
+    "an explicit track name is required to associate platform access with a track.",
 ]
 
 
@@ -243,25 +245,24 @@ async def _select_stop(
     return mode, row, haversine_m(resolved.lat, resolved.lon, *coordinates)
 
 
+def _named_access_identifiers(text: str) -> set[str]:
+    identifiers = set()
+    for match in re.finditer(
+        r"\b(gl(?:eis)?|bstg|bahnsteig)\.?\s*(\d+(?:\s*/\s*\d+)*)",
+        text, re.IGNORECASE,
+    ):
+        kind = "track" if match[1].casefold().startswith("gl") else "platform"
+        identifiers.update(f"{kind}:{number}" for number in re.findall(r"\d+", match[2]))
+    return identifiers
+
+
 def _platform_identifiers(platform: dict[str, str]) -> set[str]:
-    name = platform.get("STEIG_Name", "")
-    identifiers = set(re.findall(r"\d+", name))
-    if identifiers:
-        return identifiers
-    parts = platform.get("ID", "").split(":")
-    return {parts[-1]} if parts and parts[-1].isdigit() else set()
+    # A DHID suffix identifies a surveyed edge; it is not an explicit track label.
+    return _named_access_identifiers(platform.get("STEIG_Name", ""))
 
 
 def _connection_identifiers(row: dict[str, str]) -> set[str]:
-    identifiers = set()
-    connection = row.get("Verbindungsfunktion", "")
-    for match in re.finditer(
-        r"(?:gl(?:eis)?|bstg|bahnsteig)\s*(\d+(?:\s*/\s*\d+)*)",
-        connection,
-        re.IGNORECASE,
-    ):
-        identifiers.update(re.findall(r"\d+", match.group(1)))
-    return identifiers
+    return _named_access_identifiers(row.get("Verbindungsfunktion", ""))
 
 
 def _platform_access(joined: dict[str, Any]) -> list[dict[str, Any]]:

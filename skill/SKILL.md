@@ -163,3 +163,13 @@ platforms after the station timetable lookup times out; answer the other parts.
 Suggest DB Navigator or bwegt for public transport apps in Baden-Württemberg, never VRR.
 Print “Searched around” only once. In Telegram the application adds that header;
 do not write another one.
+
+
+### Timetable accessibility and surveyed platform edges
+Normalize GTFS wheelchair flags as 0 → unknown, 1 → accessible, 2 → not_accessible.
+For unknown say “no accessibility info in the timetable”, never “not accessible”.
+This applies to both trip wheelchair_accessible and stop wheelchair_boarding.
+BFRK platform-edge ID suffixes are not explicit track labels. Do not invent a track
+number or map an edge to a lift by its ID suffix. Only use explicit track names;
+otherwise say that the surveyed edge-to-track mapping is missing.
+Keep internal per-platform query details, retries, and query strategy out of answers.

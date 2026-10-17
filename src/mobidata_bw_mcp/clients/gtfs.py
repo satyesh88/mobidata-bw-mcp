@@ -20,6 +20,24 @@ COLUMNS = (
 )
 
 
+def wheelchair_status(value: Any) -> str:
+    """GTFS 0 is unspecified, never evidence of inaccessibility."""
+    normalized = str(value).strip().casefold() if value is not None else ""
+    return {
+        "0": "unknown", "1": "accessible", "2": "not_accessible",
+        "unknown": "unknown", "no_info_or_inherit": "unknown",
+        "accessible": "accessible", "not_accessible": "not_accessible",
+    }.get(normalized, "unknown")
+
+
+# The mainline station and its named forecourt Stadtbahn stops have separate GTFS
+# parents. Merge only these explicitly verified station-complex names, not a city search.
+_HEILBRONN_COMPLEX = {
+    "heilbronn hbf", "heilbronn hauptbahnhof", "de:08121:26", "de:08121:26_parent",
+    "heilbronn hbf/willy-brandt-platz", "heilbronn hbf/willy-brandt-pl.",
+}
+
+
 async def _query(url: str, params: dict[str, Any], *, timeout: float = 4) -> Any:
     started = time.perf_counter()
     outcome = "ok"
@@ -41,7 +59,7 @@ async def resolve_stop_ids(value: str) -> list[str]:
     key = value.strip().casefold()
     if key in _stop_cache:
         return _stop_cache[key]
-    if value.startswith("de:") or value.isdigit():
+    if (value.startswith("de:") or value.isdigit()) and key not in _HEILBRONN_COMPLEX:
         ids = [value]
         if value.endswith("_Parent"):
             children = await _query(
@@ -60,6 +78,12 @@ async def resolve_stop_ids(value: str) -> list[str]:
             "select": "stop_id,parent_station",
             "limit": 100,
         }
+        if key in _HEILBRONN_COMPLEX:
+            params.pop("stop_name")
+            params["or"] = (
+                "(stop_name.eq.Heilbronn Hauptbahnhof,"
+                "stop_name.ilike.Heilbronn Hbf/Willy-Brandt-Pl.*)"
+            )
         # Also accept coordinate strings without changing the public tool schema.
         coordinates = re.fullmatch(r"\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*", value)
         if coordinates:

@@ -10,7 +10,7 @@ this repository or in chat.
 | Item | Location |
 | --- | --- |
 | Code (a Git checkout, root-owned) | `/opt/mobidata-bw-mcp` |
-| MCP venv, runs an installed copy of the package | `/opt/mobidata-bw-mcp/venv` |
+| MCP venv, third-party packages only | `/opt/mobidata-bw-mcp/venv` |
 | Bot venv, third-party packages only | `/opt/mobidata-bw-mcp/venv-bot` |
 | MCP config and API keys | `/etc/mobidata-mcp/env`, `/etc/mobidata-mcp/keys` |
 | Bot secrets | `/etc/mobidata-bot/env` |
@@ -21,7 +21,45 @@ What differs per service decides what an update needs:
 | Service | Runs from | After `git pull` you need |
 | --- | --- | --- |
 | `mobidata-bot` | `src/` in the checkout (`PYTHONPATH`) | a restart only |
-| `mobidata-mcp` | the package installed in `venv` | reinstall the package, then restart |
+| `mobidata-mcp` | `src/` in the checkout (`PYTHONPATH`, Python module entry point) | a restart only |
+
+## Stale-wheel lesson and one-time migration
+
+A checkout at a new commit does not prove the service runs that commit. The server once
+loaded an old wheel from site-packages while the checkout contained the departures fixes.
+A restart kept loading that wheel. Both services now use the checkout as the only source
+of application code; their venvs retain third-party dependencies only.
+
+Run this migration once before removing the installed application package. The updated
+MCP unit uses both PYTHONPATH and `python -m mobidata_bw_mcp.server`, so uninstalling the
+wheel cannot remove its entry point. Confirm the loaded unit and import path first:
+
+```bash
+set -e
+cd /opt/mobidata-bw-mcp
+git pull --ff-only origin main
+sudo install -m 644 deploy/mobidata-mcp.service /etc/systemd/system/mobidata-mcp.service
+sudo systemctl daemon-reload
+sudo systemctl show mobidata-mcp -p Environment --value | tr ' ' '\n' \
+  | grep -Fx 'PYTHONPATH=/opt/mobidata-bw-mcp/src'
+sudo systemctl show mobidata-mcp -p ExecStart --value \
+  | grep -F 'python -m mobidata_bw_mcp.server'
+PYTHONPATH=/opt/mobidata-bw-mcp/src venv/bin/python -B -c \
+  'import mobidata_bw_mcp.server as s; assert s.__file__ == "/opt/mobidata-bw-mcp/src/mobidata_bw_mcp/server.py"'
+venv/bin/python -m pip uninstall -y mobidata-bw-mcp
+sudo systemctl restart mobidata-mcp
+sudo systemctl restart mobidata-bot
+```
+
+Do not reinstall the project wheel during routine updates. Install dependency requirements
+when they change. Never restart another site's service as part of this procedure.
+At startup both services log `startup service=... commit=<git hash> source=...`.
+Compare that commit with `git rev-parse --short=12 HEAD` in the checkout:
+
+```bash
+journalctl -u mobidata-mcp -u mobidata-bot --since "10 minutes ago" --no-pager \
+  | grep 'startup service='
+```
 
 ## One-time setup: read-only deploy key
 
@@ -101,9 +139,9 @@ cd /opt/mobidata-bw-mcp
 OLD=$(git rev-parse --short HEAD)
 git pull --ff-only
 git diff --stat "$OLD"..HEAD -- deploy/requirements.txt deploy/mobidata-mcp.service
+# Complete the one-time source-only migration above before this routine update.
 # Only if deploy/requirements.txt changed:
 #   venv/bin/pip install --quiet --only-binary=:all: --require-hashes -r deploy/requirements.txt
-venv/bin/pip install --quiet --force-reinstall --no-deps .
 # Only if the unit file changed:
 #   install -m 644 deploy/mobidata-mcp.service /etc/systemd/system/ && systemctl daemon-reload
 systemctl restart mobidata-mcp
@@ -149,8 +187,7 @@ On the server checkout there are no local changes, so it can move to any earlier
 set -e
 cd /opt/mobidata-bw-mcp
 git reset --hard <PREVIOUS_COMMIT>
-# MCP server only:
-venv/bin/pip install --quiet --force-reinstall --no-deps .
+# The source-only units load this checkout on restart.
 systemctl restart mobidata-mcp      # or mobidata-bot
 ```
 
@@ -174,6 +211,9 @@ rm /tmp/update.bundle
 ```
 
 `<SERVER_COMMIT>` is the commit the server is on (`git rev-parse --short HEAD` there).
+For a bot-only update, pull the pushed commit and restart only `mobidata-bot`, as in
+section 3. For changes affecting both services, follow the MCP update procedure and
+restart `mobidata-mcp` before `mobidata-bot`.
 
 ## Troubleshooting
 

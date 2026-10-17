@@ -41,7 +41,7 @@ cd /opt/mobidata-bw-mcp
 # 2. Locked dependency versions (hash-checked), then the package itself
 python3 -m venv venv
 venv/bin/pip install --require-hashes -r deploy/requirements.txt
-venv/bin/pip install --no-deps .
+# The unit imports src/ via PYTHONPATH and python -m; do not install a project wheel.
 
 # 3. Configuration: public host name and the first API key (printed once; only its hash is stored)
 install -d -m 750 -o root -g mobidata-mcp /etc/mobidata-mcp

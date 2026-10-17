@@ -34,18 +34,10 @@ without an address. This differs from the search point 49.1431403, 9.2076637.
 Use those facility coordinates and its name when no address is supplied;
 do not substitute the geocoded station address or invent a street or P+R status.
 
-Update commands, including the one-time service configuration correction:
-
-```sh
-cd /opt/mobidata-bw-mcp
-git pull --ff-only origin main
-sudo install -m 644 deploy/mobidata-mcp.service /etc/systemd/system/mobidata-mcp.service
-sudo systemctl daemon-reload
-sudo systemctl restart mobidata-mcp
-sudo systemctl restart mobidata-bot
-```
-
-These commands have not been run. They restart only the two named services.
+For the current update procedure use the [source-only migration in UPDATING.md](UPDATING.md#stale-wheel-lesson-and-one-time-migration).
+It confirms PYTHONPATH and the Python module entry point before uninstalling the stale
+project wheel. The venv retains third-party dependencies. Restart only the MCP and bot
+services. The diagnostic itself did not perform this migration.
 
 Repeat the read-only measurement after updating:
 
