@@ -61,11 +61,18 @@ async def get_departures(
     stop_or_station_id: str,
     date_value: date | None = None,
     from_time: datetime | None = None,
-    limit: int = 10,
+    limit: int = 30,
+    time_from: datetime | None = None,
+    time_to: datetime | None = None,
+    platform_only: bool = False,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     try:
-        return await _get_departures(stop_or_station_id, date_value, from_time, limit)
+        return await _get_departures(
+            stop_or_station_id, date_value, from_time, limit, time_from, time_to, platform_only
+        )
+    except ValueError as exc:
+        return {"error": "invalid_departure_query", "message": str(exc), "partial": True}
     except (TimeoutError, SourceTimeout):
         logging.getLogger(__name__).info(
             "departures error=source_timeout total_ms=%.1f",
@@ -82,12 +89,16 @@ async def _get_departures(
     stop_or_station_id: str,
     date_value: date | None = None,
     from_time: datetime | None = None,
-    limit: int = 10,
+    limit: int = 30,
+    time_from: datetime | None = None,
+    time_to: datetime | None = None,
+    platform_only: bool = False,
 ) -> dict[str, Any]:
     """Get scheduled departures for a stop or station; dates near today may not be published yet."""
-    bounded = min(limit_value(limit), 20)
+    bounded = min(limit_value(limit), 30)
     start = time.perf_counter()
     berlin = ZoneInfo("Europe/Berlin")
+    from_time = time_from or from_time
     if from_time is not None:
         from_time = (
             from_time.replace(tzinfo=berlin)
@@ -98,13 +109,21 @@ async def _get_departures(
     requested = datetime.combine(
         service_date, from_time.timetz() if from_time else clock_time(), tzinfo=berlin
     )
-    ids = await gtfs.resolve_stop_ids(stop_or_station_id)
+    end = time_to or (requested + timedelta(minutes=90))
+    end = end.replace(tzinfo=berlin) if end.tzinfo is None else end.astimezone(berlin)
+    if end <= requested:
+        raise ValueError("time_to must be after time_from.")
+    ids = (
+        await gtfs.resolve_stop_ids(stop_or_station_id, platform_only=True)
+        if platform_only
+        else await gtfs.resolve_stop_ids(stop_or_station_id)
+    )
     lookup_ms = (time.perf_counter() - start) * 1000
     query_start = time.perf_counter()
     # Hour buckets retain exact windows separately: 09:55 must never reuse 09:00's
     # truncated rows, and callers with different limits must not poison one another.
     bucket_key = (tuple(ids), service_date.isoformat(), requested.hour)
-    window_key = (requested.isoformat(), bounded)
+    window_key = (requested.isoformat(), end.isoformat(), bounded)
     bucket = gtfs._departure_cache.get(bucket_key, {})
     cache_hit = window_key in bucket
     if cache_hit:
@@ -117,9 +136,9 @@ async def _get_departures(
             "select": gtfs.COLUMNS,
             "stop_id": f"in.({quoted})",
             "_start": requested.isoformat(),
+            "_end": end.isoformat(),
             "date": f"eq.{service_date.isoformat()}",
-            "and": f"(t_departure.gte.{requested.isoformat()},"
-            f"t_departure.lt.{(requested + timedelta(minutes=90)).isoformat()})",
+            "and": f"(t_departure.gte.{requested.isoformat()},t_departure.lte.{end.isoformat()})",
             "order": "t_departure",
             "limit": bounded,
         }
@@ -153,6 +172,8 @@ async def _get_departures(
         if not items
         else []
     )
+    if len(items) >= bounded:
+        warnings.append("Result cap reached; more departures may exist in the requested window.")
     warnings.append("Times are scheduled, not realtime.")
     result = ResultEnvelope(
         query={
@@ -160,8 +181,11 @@ async def _get_departures(
             "date": service_date.isoformat(),
             "from_time": from_time.isoformat() if from_time else None,
             "limit": bounded,
+            "time_to": end.isoformat(),
+            "platform_only": platform_only,
         },
         count=len(items),
+        truncated=len(items) >= bounded,
         items=items,
         source=source_info("gtfs-arrivals-departures", settings.gtfs_url, DATASET_LICENSES["gtfs"]),
         warnings=warnings,

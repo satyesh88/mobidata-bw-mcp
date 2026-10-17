@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -75,10 +76,20 @@ def create_server(
         stop_or_station_id: str,
         date: date | None = None,
         from_time: datetime | None = None,
-        limit: int = 10,
+        limit: int = 30,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        platform_only: bool = False,
     ) -> dict[str, Any]:
-        """Get scheduled departures; dates near today may not be published yet."""
-        return await transit.get_departures(stop_or_station_id, date, from_time, limit)
+        """One merged station-complex timetable, inclusive time window, up to 30 departures.
+
+        Use the station name once with time_from/time_to ISO timestamps. Stops and
+        platform IDs expand to their station; platform_only requires an explicit user request.
+        from_time remains an alias for time_from. Never loop over platforms.
+        """
+        return await transit.get_departures(
+            stop_or_station_id, date, from_time, limit, time_from, time_to, platform_only
+        )
 
     @mcp.tool()
     async def get_roadworks(
@@ -142,6 +153,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.transport == "stdio":
+        logging.getLogger("httpx").setLevel(logging.WARNING)
         create_server().run(transport="stdio")
     else:
         from .http_app import serve

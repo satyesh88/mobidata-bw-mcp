@@ -173,3 +173,12 @@ BFRK platform-edge ID suffixes are not explicit track labels. Do not invent a tr
 number or map an edge to a lift by its ID suffix. Only use explicit track names;
 otherwise say that the surveyed edge-to-track mapping is missing.
 Keep internal per-platform query details, retries, and query strategy out of answers.
+
+
+### Station-wide departure windows
+For departures, call get_departures once with the station name and time_from/time_to
+ISO timestamps, limit=30. Do not loop over platforms. Stops/platform IDs expand to the
+whole station complex by default. Set platform_only=true only when the user explicitly
+asks for that one platform. A bare “Gleis 4” needs a station name; never guess the city.
+Never report per-platform query results. For a requested departure window list all supplied
+items in time order, including the stop/platform name, up to 30 short lines in Telegram.

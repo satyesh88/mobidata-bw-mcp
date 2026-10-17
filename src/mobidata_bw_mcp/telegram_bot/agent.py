@@ -12,9 +12,11 @@ from zoneinfo import ZoneInfo
 from anthropic import AsyncAnthropic
 
 from ..geo import haversine_m
+from ..station_complexes import canonical_station_input
 from .formatting import is_search_header
 from .mcp_bridge import MCPBridge, result_text, tool_error_result
 from .timefmt import localize_clock_text, localize_tool_result
+from .tool_logging import logged_arguments
 
 OFF_TOPIC_MARKER = "[[OFF_TOPIC]]"
 CHANNEL_LINE = "Channel: Telegram (mobile chat app)"
@@ -43,12 +45,18 @@ Telegram channel rules (these override anything above):
   one-line recommendation naming uncertainties, then add a machine-only line
   Recommendation: <facility name>. The application uses it for the pin and hides this line.
   Live availability is not a forecast for tomorrow.
-- Otherwise use at most five short phone-sized lines, no tables, sparse relevant emoji.
+- Except for departure lists, use at most five short phone-sized lines, no tables, sparse emoji.
   A list explicitly requested may be longer: one short line per item.
 - If departures returns source_timeout, say "the timetable source didn’t respond".
   Never infer that no departures are published from an error. Do not retry for a platform.
 - For public transport apps in Baden-Württemberg suggest DB Navigator or bwegt, never VRR.
 - Do not write the "Searched around" line yourself; the application adds it.
+- For departures, call get_departures once with the station name and time_from/time_to
+  timestamps. Use limit=30. Do not loop over platforms. Only set platform_only=true if
+  the user explicitly requests a single platform. Never report per-platform query results.
+- If the user asks for departures in a window, list all supplied departures in time order,
+  one short line each with line, destination, stop/platform and accessibility (up to 30 lines).
+  If truncated is true, say the result cap was reached; do not claim the window is complete.
 - Never mention tool names, internal queries, retries, or per-platform query details.
 - Timetable accessibility unknown means "no accessibility info in the timetable";
   never interpret 0 or a missing flag as not wheelchair accessible.
@@ -252,7 +260,7 @@ class MobilityAgent:
                 async with asyncio.timeout_at(tool_deadline):
                     response = await self.client.messages.create(
                         model=self.model,
-                        max_tokens=1500,
+                        max_tokens=4000,
                         system=system_prompt,
                         messages=messages,
                         tools=self.bridge.tools,
@@ -338,6 +346,21 @@ class MobilityAgent:
                 from mcp.types import CallToolResult
 
                 began = time.monotonic()
+                arguments = dict(block.input)
+                if block.name == "get_departures":
+                    station = arguments.get("stop_or_station_id")
+                    if isinstance(station, str):
+                        if re.fullmatch(r"(?:Gleis|platform|track)\s*\d+\w*", station, re.I) and (
+                            re.search(r"\bHeilbronn\s+(?:Hbf|Hauptbahnhof)\b", question, re.I)
+                        ):
+                            station = "Heilbronn Hbf " + station
+                        arguments["stop_or_station_id"] = (
+                            station if arguments.get("platform_only")
+                            else canonical_station_input(station)
+                        )
+                LOGGER.info("tool_call name=%s arguments=%s requested_arguments=%s", block.name,
+                            json.dumps(logged_arguments(arguments), ensure_ascii=False),
+                            json.dumps(logged_arguments(block.input), ensure_ascii=False))
                 try:
                     if block.name == "get_departures" and departures_failed:
                         return CallToolResult(content=[], isError=True, structuredContent={
@@ -348,7 +371,7 @@ class MobilityAgent:
                     async with asyncio.timeout(
                         min(TOOL_TIMEOUT, max(0, tool_deadline - time.monotonic()))
                     ):
-                        return await self.bridge.call_tool(block.name, block.input)
+                        return await self.bridge.call_tool(block.name, arguments)
                 except TimeoutError:
                     return CallToolResult(
                         content=[],
@@ -396,8 +419,9 @@ class MobilityAgent:
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": _model_result_text(serialized_result, _item_limit(block.name))[
-                            :8000
+                        "content": _model_result_text(serialized_result, _item_limit(block.name),
+                            max_chars=16000 if block.name == "get_departures" else 8000)[
+                            :16000 if block.name == "get_departures" else 8000
                         ],
                         "is_error": bool(result.isError) or timed_out,
                     }
@@ -409,7 +433,7 @@ class MobilityAgent:
             async with asyncio.timeout_at(total_deadline - 0.5):
                 response = await self.client.messages.create(
                     model=self.model,
-                    max_tokens=1500,
+                    max_tokens=4000,
                     system=system_prompt,
                     messages=[
                         *messages,
@@ -808,6 +832,8 @@ def recommended_place(text: str, places: list[RecommendedPlace]) -> RecommendedP
 
 def _item_limit(tool_name: str) -> int:
     """Place tools feed navigation buttons, so the model sees three; catalogue lists show more."""
+    if tool_name == "get_departures":
+        return 30
     return 3 if tool_name in _PLACE_TOOLS else 20
 
 

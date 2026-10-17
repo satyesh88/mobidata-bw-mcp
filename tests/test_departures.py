@@ -37,13 +37,13 @@ async def test_departure_cache_hit_under_100ms_and_exact_windows(monkeypatch):
     assert first["items"] == cached["items"]
     assert source.await_count == 1
     params = source.await_args.args[0]
-    assert params["limit"] == 10
+    assert params["limit"] == 30
     assert "09:00:00" in params["and"] and "10:30:00" in params["and"]
     assert params["select"] == gtfs.COLUMNS
     # Neither later minutes nor larger limits may reuse a truncated earlier window.
     await transit.get_departures("Heilbronn Hbf", from_time=WHEN.replace(minute=45), limit=200)
     assert source.await_count == 2
-    assert source.await_args.args[0]["limit"] == 20
+    assert source.await_args.args[0]["limit"] == 30
 
 
 async def test_stop_lookup_cached_and_parent_expanded(monkeypatch):
@@ -287,5 +287,98 @@ async def test_heilbronn_lookup_includes_verified_willy_brandt_complex(monkeypat
     assert await gtfs.resolve_stop_ids("Heilbronn Hbf") == ids
     assert source.await_count == 2
     # An explicit platform still means that platform, without implicit expansion.
-    assert await gtfs.resolve_stop_ids("de:08121:26:4:4") == ["de:08121:26:4:4"]
+    assert await gtfs.resolve_stop_ids("de:08121:26:4:4") == ids
+    assert await gtfs.resolve_stop_ids("de:08121:26:4:4", platform_only=True) == ["de:08121:26:4:4"]
     assert source.await_count == 2
+
+
+async def test_generic_platform_expands_to_parent_and_siblings(monkeypatch):
+    source = AsyncMock(
+        side_effect=[
+            [{"stop_id": "de:123:45:1:4", "parent_station": "de:123:45_Parent"}],
+            [{"stop_id": "de:123:45:1:4"}, {"stop_id": "de:123:45:2:5"}],
+        ]
+    )
+    monkeypatch.setattr(gtfs.http, "get_json", source)
+    assert set(await gtfs.resolve_stop_ids("de:123:45:1:4")) == {
+        "de:123:45_Parent",
+        "de:123:45:1:4",
+        "de:123:45:2:5",
+    }
+
+
+async def test_platform_name_expands_when_station_is_present_and_bare_name_is_ambiguous(
+    monkeypatch,
+):
+    monkeypatch.setitem(gtfs._stop_cache, "heilbronn hbf", ["de:08121:26", "de:08121:1114"])
+    assert await gtfs.resolve_stop_ids("Heilbronn Hbf Gleis 4") == ["de:08121:26", "de:08121:1114"]
+    result = await transit.get_departures("Gleis 4", time_from=WHEN)
+    assert result["error"] == "invalid_departure_query"
+    assert "station name" in result["message"]
+
+
+async def test_time_window_cache_and_platform_only_are_explicit(monkeypatch):
+    lookup = AsyncMock(return_value=["de:1"])
+    source = AsyncMock(return_value=[])
+    monkeypatch.setattr(gtfs, "resolve_stop_ids", lookup)
+    monkeypatch.setattr(gtfs, "departures", source)
+    await transit.get_departures("de:1", time_from=WHEN, time_to=WHEN.replace(minute=30))
+    assert source.await_args.args[0]["limit"] == 30
+    assert source.await_args.args[0]["_end"] == WHEN.replace(minute=30).isoformat()
+    assert "t_departure.lte." in source.await_args.args[0]["and"]
+    await transit.get_departures("de:1", time_from=WHEN, time_to=WHEN.replace(minute=45))
+    assert source.await_count == 2
+    await transit.get_departures(
+        "de:1", time_from=WHEN, time_to=WHEN.replace(minute=45), platform_only=True
+    )
+    assert lookup.await_args.kwargs == {"platform_only": True}
+
+
+async def test_window_returns_more_than_ten_sorted_departures_including_trams(monkeypatch):
+    source = AsyncMock(
+        side_effect=[
+            [{"trip_id": "trip"}],
+            [
+                {
+                    "t_departure": WHEN.replace(minute=i).isoformat(),
+                    "route_short_name": "S4" if i > 20 else "RE8",
+                    "stop_name": "Heilbronn Hbf/Willy-Brandt-Pl. Gleis 3",
+                }
+                for i in range(28, 0, -1)
+            ],
+        ]
+    )
+    monkeypatch.setattr(gtfs.http, "get_json", source)
+    params = {
+        "_start": WHEN.isoformat(),
+        "_end": WHEN.replace(minute=30).isoformat(),
+        "stop_id": 'in.("de:08121:26","de:08121:1114")',
+        "select": gtfs.COLUMNS,
+        "limit": 30,
+        "order": "t_departure",
+        "and": "(t_departure.gte.2026-10-19T09:00:00+02:00,"
+        "t_departure.lte.2026-10-19T09:30:00+02:00)",
+    }
+    rows = await gtfs.departures(params)
+    assert len(rows) == 28
+    assert [row["t_departure"] for row in rows] == sorted(row["t_departure"] for row in rows)
+    assert rows[-1]["route_short_name"] == "S4"
+    assert rows[-1]["stop_name"].endswith("Gleis 3")
+
+
+async def test_result_cap_is_reported_instead_of_claiming_complete_window(monkeypatch):
+    monkeypatch.setattr(gtfs, "resolve_stop_ids", AsyncMock(return_value=["de:1"]))
+    monkeypatch.setattr(
+        gtfs,
+        "departures",
+        AsyncMock(
+            return_value=[
+                {"t_departure": WHEN.isoformat(), "stop_name": f"Stop {i}"} for i in range(30)
+            ]
+        ),
+    )
+    result = await transit.get_departures(
+        "Station", time_from=WHEN, time_to=WHEN.replace(minute=30)
+    )
+    assert result["truncated"] is True
+    assert any("Result cap reached" in warning for warning in result["warnings"])

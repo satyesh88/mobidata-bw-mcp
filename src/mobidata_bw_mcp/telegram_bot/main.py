@@ -26,7 +26,6 @@ from ..version import log_startup
 from .agent import (
     MobilityAgent,
     RecommendedPlace,
-    place_label,
     recommended_place,
     short_place_label,
 )
@@ -317,7 +316,7 @@ class BotHandlers:
         self.state.remember(chat_id, "assistant", answer.text)
         await context.bot.send_message(
             chat_id,
-            answer_html(answer.text),
+            answer_html(answer.text, limit=4000 if "get_departures" in answer.tools_used else 1200),
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
             reply_markup=(
@@ -331,7 +330,7 @@ class BotHandlers:
                 chat_id,
                 latitude=best_place.lat,
                 longitude=best_place.lon,
-                title=place_label(best_place)[:256],
+                title=short_place_label(best_place),
                 address=best_place.address[:256],
             )
         LOGGER.info(

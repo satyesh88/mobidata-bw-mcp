@@ -9,6 +9,7 @@ from cachetools import TTLCache
 
 from ..config import settings
 from ..geo import bbox_around
+from ..station_complexes import HEILBRONN_COMPLEX_NAMES, canonical_station_input
 from . import geocode, wfs
 from .http import http
 
@@ -24,18 +25,14 @@ def wheelchair_status(value: Any) -> str:
     """GTFS 0 is unspecified, never evidence of inaccessibility."""
     normalized = str(value).strip().casefold() if value is not None else ""
     return {
-        "0": "unknown", "1": "accessible", "2": "not_accessible",
-        "unknown": "unknown", "no_info_or_inherit": "unknown",
-        "accessible": "accessible", "not_accessible": "not_accessible",
+        "0": "unknown",
+        "1": "accessible",
+        "2": "not_accessible",
+        "unknown": "unknown",
+        "no_info_or_inherit": "unknown",
+        "accessible": "accessible",
+        "not_accessible": "not_accessible",
     }.get(normalized, "unknown")
-
-
-# The mainline station and its named forecourt Stadtbahn stops have separate GTFS
-# parents. Merge only these explicitly verified station-complex names, not a city search.
-_HEILBRONN_COMPLEX = {
-    "heilbronn hbf", "heilbronn hauptbahnhof", "de:08121:26", "de:08121:26_parent",
-    "heilbronn hbf/willy-brandt-platz", "heilbronn hbf/willy-brandt-pl.",
-}
 
 
 async def _query(url: str, params: dict[str, Any], *, timeout: float = 4) -> Any:
@@ -55,22 +52,44 @@ async def _query(url: str, params: dict[str, Any], *, timeout: float = 4) -> Any
         )
 
 
-async def resolve_stop_ids(value: str) -> list[str]:
+async def resolve_stop_ids(value: str, platform_only: bool = False) -> list[str]:
     key = value.strip().casefold()
+    if not platform_only:
+        value = canonical_station_input(value)
+        key = value.casefold()
+    if re.fullmatch(r"(?:Gleis|Gl\.?|Bstg|Bahnsteig)\s*\d+\w*", value, re.I):
+        raise ValueError("A platform name alone is ambiguous; supply the station name.")
+    if platform_only:
+        key = "platform:" + key
     if key in _stop_cache:
         return _stop_cache[key]
-    if (value.startswith("de:") or value.isdigit()) and key not in _HEILBRONN_COMPLEX:
+    is_id = value.startswith("de:") or value.isdigit()
+    if platform_only and is_id:
         ids = [value]
+    elif is_id and value.strip().casefold() not in HEILBRONN_COMPLEX_NAMES:
         if value.endswith("_Parent"):
-            children = await _query(
+            parent = value
+        else:
+            rows = await _query(
                 f"{settings.gtfs_url}stops",
                 {
-                    "parent_station": f"eq.{value}",
-                    "select": "stop_id",
-                    "limit": 1000,
+                    "stop_id": f"eq.{value}",
+                    "select": "stop_id,parent_station",
+                    "limit": 1,
                 },
             )
-            ids.extend(row["stop_id"] for row in children)
+            parent = (rows[0].get("parent_station") or value) if rows else value
+        if re.match(r"^de:08121:(?:26|1114|1115|1116)(?::|_|$)", parent):
+            return await resolve_stop_ids("Heilbronn Hbf")
+        children = await _query(
+            f"{settings.gtfs_url}stops",
+            {
+                "parent_station": f"eq.{parent}",
+                "select": "stop_id",
+                "limit": 1000,
+            },
+        )
+        ids = list(dict.fromkeys([parent, value, *(row["stop_id"] for row in children)]))
     else:
         name = re.sub(r"\bHbf\b", "Hauptbahnhof", value.strip(), flags=re.I)
         params = {
@@ -78,7 +97,7 @@ async def resolve_stop_ids(value: str) -> list[str]:
             "select": "stop_id,parent_station",
             "limit": 100,
         }
-        if key in _HEILBRONN_COMPLEX:
+        if not platform_only and key in HEILBRONN_COMPLEX_NAMES:
             params.pop("stop_name")
             params["or"] = (
                 "(stop_name.eq.Heilbronn Hauptbahnhof,"
@@ -102,7 +121,7 @@ async def resolve_stop_ids(value: str) -> list[str]:
             dict.fromkeys(row["parent_station"] for row in rows if row.get("parent_station"))
         )
         # Expand parent stations once so departures need only the indexed stop_id filter.
-        if parents:
+        if parents and not platform_only:
             quoted = ",".join('"' + item.replace('"', "") + '"' for item in parents)
             children = await _query(
                 f"{settings.gtfs_url}stops",
@@ -127,20 +146,24 @@ async def departures(params: dict[str, Any]) -> list[dict[str, Any]]:
 
 async def _bounded_departures(params: dict[str, Any]) -> list[dict[str, Any]]:
     start = datetime.fromisoformat(params["_start"])
-    end = start + timedelta(minutes=90)
+    end = (
+        datetime.fromisoformat(params["_end"])
+        if "_end" in params
+        else start + timedelta(minutes=90)
+    )
     stop_filter = params["stop_id"]
     candidates: list[str] = []
     # GTFS service-day intervals may exceed 24:00. Include the previous service day
     # and the next day for windows crossing midnight; the final timestamp filter
     # below decides which dated departures actually belong to the requested window.
     windows = []
-    for day_offset in (-1, 0, 1):
+    for day_offset in range(-1, (end.date() - start.date()).days + 1):
         midnight = start.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
             days=day_offset
         )
         lower = (start.replace(tzinfo=None) - midnight.replace(tzinfo=None)).total_seconds()
         upper = (end.replace(tzinfo=None) - midnight.replace(tzinfo=None)).total_seconds()
-        if upper <= 0:
+        if upper < 0:
             continue
 
         def interval(seconds: float) -> str:
@@ -149,7 +172,7 @@ async def _bounded_departures(params: dict[str, Any]) -> list[dict[str, Any]]:
             return f"{hours:02}:{minutes:02}:{seconds:02}"
 
         windows.append(
-            f"and(departure_time.gte.{interval(lower)},departure_time.lt.{interval(upper)})"
+            f"and(departure_time.gte.{interval(lower)},departure_time.lte.{interval(upper)})"
         )
 
     offset = 0
@@ -179,4 +202,6 @@ async def _bounded_departures(params: dict[str, Any]) -> list[dict[str, Any]]:
     query["date"] = f"gte.{(start.date() - timedelta(days=1)).isoformat()}"
     query["and"] = query["and"][:-1] + f",date.lte.{end.date().isoformat()})"
     # One view request across all platforms; never retry by individual platform.
-    return await _query(f"{settings.gtfs_url}arrivals_departures", query)
+    records = await _query(f"{settings.gtfs_url}arrivals_departures", query)
+    records.sort(key=lambda row: datetime.fromisoformat(row["t_departure"].replace("Z", "+00:00")))
+    return records[: params["limit"]]

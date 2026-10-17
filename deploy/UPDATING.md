@@ -35,19 +35,18 @@ MCP unit uses both PYTHONPATH and `python -m mobidata_bw_mcp.server`, so uninsta
 wheel cannot remove its entry point. Confirm the loaded unit and import path first:
 
 ```bash
-set -e
-cd /opt/mobidata-bw-mcp
-git pull --ff-only origin main
-sudo install -m 644 deploy/mobidata-mcp.service /etc/systemd/system/mobidata-mcp.service
-sudo systemctl daemon-reload
+cd /opt/mobidata-bw-mcp &&
+git pull --ff-only origin main &&
+sudo install -m 644 deploy/mobidata-mcp.service /etc/systemd/system/mobidata-mcp.service &&
+sudo systemctl daemon-reload &&
 sudo systemctl show mobidata-mcp -p Environment --value | tr ' ' '\n' \
-  | grep -Fx 'PYTHONPATH=/opt/mobidata-bw-mcp/src'
+  | grep -Fx 'PYTHONPATH=/opt/mobidata-bw-mcp/src' &&
 sudo systemctl show mobidata-mcp -p ExecStart --value \
-  | grep -F 'python -m mobidata_bw_mcp.server'
+  | grep -F 'python -m mobidata_bw_mcp.server' &&
 PYTHONPATH=/opt/mobidata-bw-mcp/src venv/bin/python -B -c \
-  'import mobidata_bw_mcp.server as s; assert s.__file__ == "/opt/mobidata-bw-mcp/src/mobidata_bw_mcp/server.py"'
-venv/bin/python -m pip uninstall -y mobidata-bw-mcp
-sudo systemctl restart mobidata-mcp
+  'import mobidata_bw_mcp.server as s; assert s.__file__ == "/opt/mobidata-bw-mcp/src/mobidata_bw_mcp/server.py"' &&
+venv/bin/python -m pip uninstall -y mobidata-bw-mcp &&
+sudo systemctl restart mobidata-mcp &&
 sudo systemctl restart mobidata-bot
 ```
 
@@ -114,13 +113,12 @@ update must never change them.
 ### 3. Bot only
 
 ```bash
-set -e
-cd /opt/mobidata-bw-mcp
-git pull --ff-only
-test "$(git rev-parse --short HEAD)" = <EXPECTED_COMMIT>
-systemctl restart mobidata-bot
-sleep 8
-systemctl is-active mobidata-bot mobidata-mcp
+cd /opt/mobidata-bw-mcp &&
+git pull --ff-only &&
+test "$(git rev-parse --short HEAD)" = <EXPECTED_COMMIT> &&
+systemctl restart mobidata-bot &&
+sleep 8 &&
+systemctl is-active mobidata-bot mobidata-mcp &&
 journalctl -u mobidata-bot -n 15 --no-pager
 ```
 
@@ -134,19 +132,18 @@ venv-bot/bin/pip install --quiet --only-binary=:all: --require-hashes -r deploy/
 ### 4. MCP server
 
 ```bash
-set -e
-cd /opt/mobidata-bw-mcp
-OLD=$(git rev-parse --short HEAD)
-git pull --ff-only
-git diff --stat "$OLD"..HEAD -- deploy/requirements.txt deploy/mobidata-mcp.service
+cd /opt/mobidata-bw-mcp &&
+OLD=$(git rev-parse --short HEAD) &&
+git pull --ff-only &&
+git diff --stat "$OLD"..HEAD -- deploy/requirements.txt deploy/mobidata-mcp.service &&
 # Complete the one-time source-only migration above before this routine update.
 # Only if deploy/requirements.txt changed:
 #   venv/bin/pip install --quiet --only-binary=:all: --require-hashes -r deploy/requirements.txt
 # Only if the unit file changed:
 #   install -m 644 deploy/mobidata-mcp.service /etc/systemd/system/ && systemctl daemon-reload
-systemctl restart mobidata-mcp
-sleep 5
-curl -fsS http://127.0.0.1:8765/health
+systemctl restart mobidata-mcp &&
+sleep 5 &&
+curl -fsS http://127.0.0.1:8765/health &&
 systemctl is-active mobidata-mcp mobidata-bot
 ```
 
@@ -164,11 +161,11 @@ Restart the MCP server before the bot when both change.
     's/[0-9]{8,}:[A-Za-z0-9_-]{25,}/<token>/g; s/sk-ant-[A-Za-z0-9_-]+/<anthropic>/g; s/mdbw_[A-Za-z0-9_-]+/<mcp-key>/g'
   ```
 
-### Use hard stops
+### Stop on failed updates
 
-Write each command on its own line under `set -e`. A chain such as `git pull && echo ok` does not stop
-the script when the pull fails, and the restart still runs. The checkout must be clean (`git status
---short` prints nothing) because the pull is fast-forward only.
+Keep each update in one `&&` chain, including the pull, checks and restarts. A failed
+pull or verification then prevents every later command from running. The checkout
+must be clean because the pull is fast-forward only.
 
 ## Changing configuration or secrets
 
@@ -184,9 +181,8 @@ the script when the pull fails, and the restart still runs. The checkout must be
 On the server checkout there are no local changes, so it can move to any earlier commit:
 
 ```bash
-set -e
-cd /opt/mobidata-bw-mcp
-git reset --hard <PREVIOUS_COMMIT>
+cd /opt/mobidata-bw-mcp &&
+git reset --hard <PREVIOUS_COMMIT> &&
 # The source-only units load this checkout on restart.
 systemctl restart mobidata-mcp      # or mobidata-bot
 ```

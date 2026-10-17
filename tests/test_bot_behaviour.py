@@ -564,3 +564,62 @@ def test_short_button_names_cap_entire_label_at_thirty_characters():
     assert 'Never mention tool names, internal queries, retries, or per-platform query details' in (
         agent_module.SYSTEM_PROMPT
     )
+
+
+@pytest.mark.asyncio
+async def test_agent_logs_arguments_safely_and_dispatches_station_name(caplog):
+    import logging
+
+    from mcp.types import CallToolResult
+
+    bridge = MCPBridge()
+    bridge.call_tool = AsyncMock(return_value=CallToolResult(content=[]))
+    agent = MobilityAgent(bridge, 'model')
+    agent.client.messages.create = AsyncMock(side_effect=[
+        response(Block('tool_use', id='1', name='get_departures', input={
+            'stop_or_station_id': 'de:08121:26:4:4',
+            'time_from': '2026-10-19T09:00:00+02:00',
+            'time_to': '2026-10-19T09:30:00+02:00',
+            'location': {'lat': 49.1431403, 'lon': 9.2076637},
+            'question': 'private message body',
+        })),
+        response(Block('text', text='The station timetable is available.')),
+    ])
+    with caplog.at_level(logging.INFO, logger=agent_module.__name__):
+        await agent.answer('private message body', [])
+    assert bridge.call_tool.await_args.args[1]['stop_or_station_id'] == 'Heilbronn Hbf'
+    assert bridge.call_tool.await_args.args[1]['location']['lat'] == 49.1431403
+    assert 'tool_call name=get_departures' in caplog.text
+    assert '"lat": 49.143' in caplog.text and '"lon": 9.208' in caplog.text
+    assert '49.1431403' not in caplog.text and 'private message body' not in caplog.text
+    assert 'requested_arguments=' in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_pin_title_and_button_share_short_station_name():
+    station = RecommendedPlace('Heilbronn Hauptbahnhof, Heilbronn, Deutschland',
+                               49.143, 9.208, 'station', 'Bahnhofstraße 1')
+    text = 'Heilbronn Hbf departures are available.'
+    handlers = BotHandlers(Settings('123:token', 'model', 10, 10, frozenset(), 10), MCPBridge())
+    handlers.agent = SimpleNamespace(answer=AsyncMock(
+        return_value=AgentAnswer(text, 1, 1, ['get_departures'], 'end_turn', 1, [station])
+    ))
+    bot = SimpleNamespace(
+        send_chat_action=AsyncMock(), send_message=AsyncMock(), send_venue=AsyncMock()
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=7), effective_chat=SimpleNamespace(id=8)
+    )
+    await handlers._answer(update, SimpleNamespace(bot=bot), 'Departures')
+    assert bot.send_venue.await_args.kwargs['title'] == 'Heilbronn Hbf'
+    markup = bot.send_message.await_args.kwargs['reply_markup']
+    assert markup.inline_keyboard[0][0].text == '🧭 Heilbronn Hbf'
+
+
+def test_departure_model_context_keeps_all_thirty_rows():
+    import json
+
+    payload = json.dumps({'items': [{'route': 'S4', 'stop_name': f'Stop {i}'} for i in range(30)]})
+    projected = agent_module._model_result_text(payload, agent_module._item_limit('get_departures'),
+                                               max_chars=16000)
+    assert len(json.loads(projected)['items']) == 30
