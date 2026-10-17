@@ -1,15 +1,32 @@
-from typing import Any
+from typing import Any, Literal
 
 from ..clients import ckan, wfs
 from ..config import DATASET_LICENSES, settings
 from ..models import ResultEnvelope, source_info
 from .common import limit_value, parse_timestamp
 
+DatasetGroup = Literal[
+    "barrierefreiheit",
+    "e-mobilitaet",
+    "fuss-und-radverkehr",
+    "parkraum",
+    "sharing-angebote",
+    "sonstiges",
+    "verkehrsereignisse",
+    "verkehrsnetze",
+    "verkehrszaehldaten",
+    "oeffentlicher-personenverkehr",
+]
 
-async def search_datasets(query: str, limit: int = 10) -> dict[str, Any]:
-    """Search MobiData BW's catalogue by topic and return datasets, formats, and licences."""
+
+async def search_datasets(
+    query: str = "", limit: int = 10, group: DatasetGroup | None = None
+) -> dict[str, Any]:
+    """Search the catalogue by topic. Use group to list a whole category, e.g. parkraum for all
+    parking datasets; an empty query matches everything."""
     bounded = limit_value(limit)
-    payload = await ckan.search(query, bounded)
+    payload = await ckan.search(query, bounded, group)
+    total = payload.get("count", 0)
     items = []
     missing_licences = []
     for dataset in payload.get("results", []):
@@ -33,15 +50,20 @@ async def search_datasets(query: str, limit: int = 10) -> dict[str, Any]:
                 ),
             }
         )
+    warnings = []
+    if missing_licences:
+        warnings.append(f"Licence metadata is missing for: {', '.join(missing_licences)}")
+    if total > len(items):
+        warnings.append(
+            f"Showing {len(items)} of {total} matching datasets; raise limit or use group."
+        )
     return ResultEnvelope(
-        query={"query": query, "limit": bounded},
+        query={"query": query, "limit": bounded, "group": group, "total_matches": total},
         count=len(items),
-        truncated=payload.get("count", 0) > len(items),
+        truncated=total > len(items),
         items=items,
         source=source_info("mobidata-bw-catalog", settings.ckan_url, "Varies by dataset"),
-        warnings=[f"Licence metadata is missing for: {', '.join(missing_licences)}"]
-        if missing_licences
-        else [],
+        warnings=warnings,
     ).compact()
 
 

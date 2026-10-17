@@ -19,8 +19,11 @@ async def _action(name: str, params: dict[str, Any]) -> dict[str, Any]:
     return payload["result"]
 
 
-async def search(query: str, limit: int) -> dict[str, Any]:
-    return await _action("package_search", {"q": query, "rows": limit})
+async def search(query: str, limit: int, group: str | None = None) -> dict[str, Any]:
+    params: dict[str, Any] = {"q": query.strip() or "*:*", "rows": limit}
+    if group:
+        params["fq"] = f"groups:{group}"
+    return await _action("package_search", params)
 
 
 async def get(dataset_id: str) -> dict[str, Any]:
