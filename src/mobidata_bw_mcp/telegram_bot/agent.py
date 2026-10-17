@@ -13,6 +13,7 @@ from .mcp_bridge import MCPBridge, result_text, tool_error_result
 from .timefmt import localize_clock_text, localize_tool_result
 
 OFF_TOPIC_MARKER = "[[OFF_TOPIC]]"
+CHANNEL_LINE = "Channel: Telegram (mobile chat app)"
 _SKILL_PATH = Path(__file__).resolve().parents[3] / "skill" / "SKILL.md"
 
 
@@ -31,6 +32,8 @@ other topic reply with exactly {OFF_TOPIC_MARKER} and nothing else; the applicat
 {_skill_rules()}
 
 Telegram channel rules (these override anything above):
+- The channel is Telegram. Use the chat-app format and ignore the desktop format and the desktop
+  worked example.
 - Use at most five short phone-sized lines, no tables, sparse relevant emoji. A list the user
   explicitly asked for, such as all datasets of a category, may be longer: one short line per item.
 - Do not write the "Searched around" line yourself; the application adds it.
@@ -389,7 +392,8 @@ def _berlin_now() -> datetime:
 def _system_prompt(now: datetime) -> str:
     timestamp = now.isoformat(timespec="seconds")
     return (
-        f"{SYSTEM_PROMPT}\nCurrent Europe/Berlin date and time: {timestamp}.\n"
+        f"{CHANNEL_LINE}\nCurrent Europe/Berlin date and time: {timestamp}.\n\n"
+        f"{SYSTEM_PROMPT}\n"
         "A date without a year means that day this year. If it has already passed, do not use "
         "next year: use today's date instead, as the context note says."
     )

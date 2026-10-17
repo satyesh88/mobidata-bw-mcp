@@ -143,6 +143,20 @@ def test_system_prompt_is_built_from_the_skill_plus_telegram_rules() -> None:
     assert SYSTEM_PROMPT.index("Telegram channel rules") > SYSTEM_PROMPT.index(rules)
 
 
+def test_system_prompt_names_the_telegram_channel_next_to_the_date() -> None:
+    from mobidata_bw_mcp.telegram_bot.agent import _system_prompt
+
+    now = datetime(2026, 10, 18, 9, 30, tzinfo=ZoneInfo("Europe/Berlin"))
+    prompt = _system_prompt(now)
+
+    assert prompt.startswith("Channel: Telegram (mobile chat app)\n")
+    assert (
+        "Channel: Telegram (mobile chat app)\n"
+        "Current Europe/Berlin date and time: 2026-10-18T09:30:00+02:00."
+    ) in prompt
+    assert "The channel is Telegram. Use the chat-app format" in prompt
+
+
 def test_catalogue_lists_are_not_capped_to_three_items() -> None:
     from mobidata_bw_mcp.telegram_bot.agent import _item_limit
 
