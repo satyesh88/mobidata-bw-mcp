@@ -173,7 +173,17 @@ The MCP server gives an agent the **tools**. The skill teaches it **how to use t
 
 The skill only helps when the MCP server (hosted or local) is also connected.
 
-**Easiest:** download [mobidata-bw.zip](https://github.com/satyesh88/mobidata-bw-mcp/releases/latest/download/mobidata-bw.zip) and upload it under **Customize → Skills → + → Upload a skill**.
+**Skill release v0.3.0** includes station-wide departure windows (up to 30 rows, including
+Stadtbahn stops at Heilbronn Hbf/Willy-Brandt-Pl.), explicit timeout wording, correct
+wheelchair flags, and conservative BFRK edge-to-track handling. It also covers accessible
+parking versus public transport comparisons and answer-driven navigation.
+
+Use an updated MCP server exposing `time_from`, `time_to` and `platform_only` on
+`get_departures`. Update a self-hosted server before installing this skill; see
+[Updating the hosted services](deploy/UPDATING.md). The skill ZIP contains instructions,
+not the server or its credentials.
+
+**Easiest:** download [mobidata-bw.zip for v0.3.0](https://github.com/satyesh88/mobidata-bw-mcp/releases/download/v0.3.0/mobidata-bw.zip) and upload it under **Customize → Skills → + → Upload a skill**.
 
 ### Claude (web and desktop): no terminal needed
 
@@ -210,11 +220,18 @@ Invoke-WebRequest https://raw.githubusercontent.com/satyesh88/mobidata-bw-mcp/ma
   -OutFile "$HOME\.claude\skills\mobidata-bw\SKILL.md"
 ```
 
-The upload ZIP, from a clone of this repository (macOS / Linux):
+Build the upload ZIP from a clone with Python 3 (also works on Windows with `python`):
 ```bash
-mkdir -p build/mobidata-bw && cp skill/SKILL.md build/mobidata-bw/
-(cd build && zip -X ../mobidata-bw.zip mobidata-bw/SKILL.md)
+python3 scripts/build_skill.py
 ```
+
+Upload `dist/mobidata-bw.zip`. The builder verifies that the archive contains exactly
+`mobidata-bw/SKILL.md` and matches the current source. It uses fixed ZIP timestamps so
+repeated builds of the same skill produce the same archive.
+
+Tagged releases (`v*`) run the same builder and attach `mobidata-bw.zip` to the GitHub
+release. The [latest-release download](https://github.com/satyesh88/mobidata-bw-mcp/releases/latest/download/mobidata-bw.zip)
+tracks the newest published release.
 
 <details>
 <summary>Build the ZIP by hand (no terminal)</summary>
@@ -309,7 +326,10 @@ The ChatGPT app itself expects OAuth for custom MCP servers, so this API-key ser
 A complete bot in `src/mobidata_bw_mcp/telegram_bot/`:
 - uses Claude with this server's tools and the skill
 - answers in German or English
-- sends navigation buttons and a location pin
+- sends up to three answer-driven navigation buttons and a pin with the same short facility name
+- retrieves one merged station-complex timetable for an explicit time window, up to 30 departures
+- runs parallel tools with per-tool timeouts and a 75-second total deadline
+- shows a progress message after 8 seconds and preserves partial results when a source fails
 - enforces per-user and daily-budget limits
 
 ```bash

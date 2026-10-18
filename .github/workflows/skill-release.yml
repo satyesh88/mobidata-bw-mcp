@@ -17,18 +17,14 @@ jobs:
 
       - name: Build mobidata-bw.zip
         run: |
-          set -euo pipefail
-          mkdir -p build/mobidata-bw
-          cp skill/SKILL.md build/mobidata-bw/SKILL.md
-          (cd build && zip -X ../mobidata-bw.zip mobidata-bw/SKILL.md)
-          unzip -l mobidata-bw.zip
-          test "$(unzip -Z1 mobidata-bw.zip)" = "mobidata-bw/SKILL.md"
+          python3 scripts/build_skill.py
+          unzip -l dist/mobidata-bw.zip
 
       - name: Keep the ZIP as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: mobidata-bw
-          path: mobidata-bw.zip
+          path: dist/mobidata-bw.zip
           if-no-files-found: error
 
       - name: Attach the ZIP to the release for this tag
@@ -42,7 +38,7 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
           fi
-          gh release upload "$TAG" mobidata-bw.zip --clobber
+          gh release upload "$TAG" dist/mobidata-bw.zip --clobber
           echo "Release: https://github.com/$GH_REPO/releases/tag/$TAG"
 
       - name: Note for runs that are not on a tag

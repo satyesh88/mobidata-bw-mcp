@@ -11,9 +11,9 @@ Requires the MobiData BW MCP server (17 tools). This skill only says when to use
 
 - Use the tools before answering any factual mobility question. Never state facts, numbers, availability, times, routes or places that a tool did not return in the current turn.
 - Pass a place name as the user wrote it, or explicit `lat` and `lon`. If a place is ambiguous, ask one short clarification.
-- Always state the resolved place from `query.location` (not your own guess) as a first line, for example "Searched around: Stuttgart Hauptbahnhof".
+- State the resolved place from `query.location` (not your own guess) once, for example "Searched around: Stuttgart Hauptbahnhof". If the application adds the header, do not write another one.
 - Always show freshness: live (with age in minutes), stale (older than 30 minutes), no live feed, scheduled, or surveyed (with the survey year). Quote the returned timestamp.
-- Always pass on every item in `warnings`. If `truncated` is true, say that more results exist.
+- Always pass on every item in `warnings`. If `truncated` is true, say the result cap was reached and the list may be incomplete.
 - If you state a count, it must equal the number of items you list.
 - Times are Europe/Berlin local time, written HH:MM. Convert any UTC timestamp from a result and never write "UTC".
 - A date without a year means that day in the current year. If that day has already passed, do not silently use next year: say so in the first line, show today's situation, and ask whether the user meant next year, for example "15 Oct has passed. Showing today's situation. Did you mean 15 Oct 2027?" Pass dates to tools as ISO dates.
@@ -39,7 +39,7 @@ Places near a location
 - Stops and stations: `find_transit`.
 
 Public transport
-- Departures: `find_transit` to get the stop id, then `get_departures`. Times are scheduled, not real time. Use the `wheelchair_accessible` field when the user needs step-free travel.
+- Departures: call `get_departures` once with the station name, `time_from`, `time_to` and `limit=30`. Do not loop over platform IDs. Use `find_transit` only when nearby stops or station coordinates are needed. Times are scheduled, not real time; interpret `wheelchair_accessible` using the rules below.
 
 Accessibility of a stop
 - `stop_accessibility` for a named stop or the nearest stop: step-free access, platform heights, lifts, ramps, tactile guidance, toilets, parking.
@@ -68,7 +68,7 @@ Truck tour check
 Accessible trip
 1. `stop_accessibility` for the start or destination stop. Report step-free access, platform height, lifts and the survey year.
 2. `find_accessible_parking` near the destination when the user arrives by car.
-3. `find_transit` then `get_departures` and mention which departures are `wheelchair_accessible`.
+3. Call `get_departures` once for the station and requested time window. Distinguish accessible, not_accessible and unknown timetable flags. Include local services returned by the tools.
 4. Close with the safety wording below.
 
 Live parking, charging and sharing
@@ -89,7 +89,7 @@ Live parking, charging and sharing
 Choose the length from the channel. Use the channel named in the system prompt or conversation (for example "Channel: Telegram"). If no channel is stated, assume a desktop, web or IDE chat.
 
 Chat apps (Telegram, WhatsApp, SMS-like)
-- At most about five short lines, no tables, sparse emoji. Lead with the answer, then freshness, then the caveat that matters most.
+- At most about five short lines for ordinary questions, no tables, sparse emoji. Use about eight lines for drive/public-transport comparisons, and up to 30 lines for requested departure lists. Lead with the answer, then freshness and the key caveat.
 - Offer "More?" at the end of the last line instead of adding detail.
 - When the user asks for a full list (for example all datasets of a category), list every item as one short line.
 
@@ -100,7 +100,7 @@ Desktop, web and IDE chats (the default)
 - When the client supports artifacts, GeoJSON results may be drawn on a simple map.
 
 In every channel
-- Open with the location you understood ("Searched around: ...").
+- Open with the location you understood ("Searched around: ...") once. If the application adds this header, do not write it yourself.
 - Give the freshness and every caveat that applies. Never guess.
 - End with the attribution line.
 
@@ -113,10 +113,10 @@ Desktop answer
 ```text
 Searched around: Heilbronn Hbf (Heilbronn)
 
-**Short answer:** not fully step-free. 6 of the 7 surveyed platform edges have step-free access; one has stair access only.
+**Short answer:** step-free access is unknown for all 7 surveyed platform edges. Their names do not provide a verified edge-to-track mapping.
 
 **Lifts**
-- 6 lifts recorded: the bridge over the tracks (both ends), station building to the underpass, and the underpass to platform groups 3/4, 4/5 and 6/7.
+- 6 lifts recorded, including the bridge and station-building/underpass connections. The survey does not establish which unnamed platform edge each lift serves.
 
 **Ramps**
 - 7 ramps recorded, for example from the station building to platform 1.
@@ -138,7 +138,7 @@ Telegram answer
 
 ```text
 Searched around: Heilbronn Hbf
-♿ Not fully step-free: 6 of 7 surveyed platform edges are, one has stairs only.
+♿ Step-free access unknown for all 7 surveyed edges; edge-to-track mapping is missing.
 🛗 6 lifts and 7 ramps recorded. Platform heights weren't recorded.
 🚻 2 toilets (one accessible, Euro key needed); 0 disabled parking spaces recorded.
 ⚠️ Survey 2021, may be outdated; lift status isn't live; positions offset 1.5–4 m. More?
@@ -150,9 +150,10 @@ Daten: MobiData BW® / NVBW und Datengeber
 Compare both options in one answer: 🚗 accessible parking spaces and live availability;
 🚆 step-free platforms, lifts and available connections. Finish with a one-line
 recommendation naming uncertainties (including missing origin, lift status, or connections).
-Add a machine-only line `Recommendation: <facility name>` after the prose recommendation.
-The Telegram renderer parses it for the pin and hides it from the displayed answer.
-Use the exact facility name (or its street/address for generic names) so navigation matches.
+For the reference Telegram bot, add a machine-only line `Recommendation: <facility name>`
+after the prose recommendation. Its renderer parses it for the pin and hides the line.
+In other clients, write the recommendation once in prose without this machine marker.
+Use the exact facility name (or its street/address for generic names) so navigation matches. Do not add a P+R label unless the source identifies the facility as park-and-ride.
 Live parking availability cannot predict spaces tomorrow. On Telegram use about eight lines.
 
 
@@ -176,9 +177,11 @@ Keep internal per-platform query details, retries, and query strategy out of ans
 
 
 ### Station-wide departure windows
-For departures, call get_departures once with the station name and time_from/time_to
-ISO timestamps, limit=30. Do not loop over platforms. Stops/platform IDs expand to the
-whole station complex by default. Set platform_only=true only when the user explicitly
+For departures, call `get_departures` once with the station name and `time_from`/`time_to`
+ISO timestamps, `limit=30`. The interval includes both endpoints. Do not loop over platforms.
+Stops/platform IDs expand to the whole station complex by default. Set platform_only=true only when the user explicitly
 asks for that one platform. A bare “Gleis 4” needs a station name; never guess the city.
+Use the connected tool schema. If the time-window parameters are unavailable, say the
+server needs an update for this workflow; do not emulate it with per-platform calls.
 Never report per-platform query results. For a requested departure window list all supplied
 items in time order, including the stop/platform name, up to 30 short lines in Telegram.
