@@ -1,4 +1,4 @@
-# MobiData BW MCP development
+# Contributor guidelines
 
 - Use Python 3.11+ and manage dependencies and commands with `uv`.
 - Follow the official MCP Python SDK documentation: https://py.sdk.modelcontextprotocol.io/

@@ -1,50 +1,50 @@
 # Updating the hosted services
 
 How to ship new code to a server that runs the MCP server and, optionally, the Telegram bot as systemd
-services (see [README.md](README.md) for the first install). Placeholders: `<SSH_ALIAS>` is your SSH
-host alias, `<DOMAIN>` the public host name. Never put real addresses, host names, keys or tokens in
-this repository or in chat.
+services (see [README.md](README.md) for the first install). Placeholders: `<SERVER>` is your SSH
+host alias, `<INSTALL_DIR>` the checkout directory, and `<DOMAIN>` the public host name.
+The example systemd units use `/opt/mobidata-bw-mcp`; adapt them if the install directory differs. Never put real addresses, host names, keys or tokens in
+this repository or in support messages.
 
 ## Layout on the server
 
 | Item | Location |
 | --- | --- |
-| Code (a Git checkout, root-owned) | `/opt/mobidata-bw-mcp` |
-| MCP venv, third-party packages only | `/opt/mobidata-bw-mcp/venv` |
-| Bot venv, third-party packages only | `/opt/mobidata-bw-mcp/venv-bot` |
+| Code (a Git checkout, root-owned) | `<INSTALL_DIR>` |
+| MCP venv, third-party packages only | `<INSTALL_DIR>/venv` |
+| Bot venv, third-party packages only | `<INSTALL_DIR>/venv-bot` |
 | MCP config and API keys | `/etc/mobidata-mcp/env`, `/etc/mobidata-mcp/keys` |
 | Bot secrets | `/etc/mobidata-bot/env` |
 | Services | `mobidata-mcp` (127.0.0.1:8765), `mobidata-bot` (no listening port) |
 
 What differs per service decides what an update needs:
 
-| Service | Runs from | After `git pull` you need |
+| Service | Runs from | After `git pull` |
 | --- | --- | --- |
 | `mobidata-bot` | `src/` in the checkout (`PYTHONPATH`) | a restart only |
 | `mobidata-mcp` | `src/` in the checkout (`PYTHONPATH`, Python module entry point) | a restart only |
 
 ## Stale-wheel lesson and one-time migration
 
-A checkout at a new commit does not prove the service runs that commit. The server once
-loaded an old wheel from site-packages while the checkout contained the departures fixes.
-A restart kept loading that wheel. Both services now use the checkout as the only source
-of application code; their venvs retain third-party dependencies only.
+A checkout at a new commit does not prove the service runs that commit. An installed
+wheel can shadow the checkout, including after a restart. Both services use the checkout
+as the only source of application code; their venvs retain third-party dependencies only.
 
 Run this migration once before removing the installed application package. The updated
 MCP unit uses both PYTHONPATH and `python -m mobidata_bw_mcp.server`, so uninstalling the
 wheel cannot remove its entry point. Confirm the loaded unit and import path first:
 
 ```bash
-cd /opt/mobidata-bw-mcp &&
+cd "<INSTALL_DIR>" &&
 git pull --ff-only origin main &&
 sudo install -m 644 deploy/mobidata-mcp.service /etc/systemd/system/mobidata-mcp.service &&
 sudo systemctl daemon-reload &&
 sudo systemctl show mobidata-mcp -p Environment --value | tr ' ' '\n' \
-  | grep -Fx 'PYTHONPATH=/opt/mobidata-bw-mcp/src' &&
+  | grep -Fx 'PYTHONPATH=<INSTALL_DIR>/src' &&
 sudo systemctl show mobidata-mcp -p ExecStart --value \
   | grep -F 'python -m mobidata_bw_mcp.server' &&
-PYTHONPATH=/opt/mobidata-bw-mcp/src venv/bin/python -B -c \
-  'import mobidata_bw_mcp.server as s; assert s.__file__ == "/opt/mobidata-bw-mcp/src/mobidata_bw_mcp/server.py"' &&
+PYTHONPATH="<INSTALL_DIR>/src" venv/bin/python -B -c \
+  'import mobidata_bw_mcp.server as s; assert s.__file__ == "<INSTALL_DIR>/src/mobidata_bw_mcp/server.py"' &&
 venv/bin/python -m pip uninstall -y mobidata-bw-mcp &&
 sudo systemctl restart mobidata-mcp &&
 sudo systemctl restart mobidata-bot
@@ -79,7 +79,7 @@ The server pulls over SSH with a read-only deploy key, so the repository can sta
 4. Test and switch the remote:
    ```
    ssh -T git@github-mobidata
-   cd /opt/mobidata-bw-mcp
+   cd "<INSTALL_DIR>"
    git remote set-url origin git@github-mobidata:<OWNER>/mobidata-bw-mcp.git
    git ls-remote origin HEAD
    ```
@@ -113,7 +113,7 @@ update must never change them.
 ### 3. Bot only
 
 ```bash
-cd /opt/mobidata-bw-mcp &&
+cd "<INSTALL_DIR>" &&
 git pull --ff-only &&
 test "$(git rev-parse --short HEAD)" = <EXPECTED_COMMIT> &&
 systemctl restart mobidata-bot &&
@@ -132,7 +132,7 @@ venv-bot/bin/pip install --quiet --only-binary=:all: --require-hashes -r deploy/
 ### 4. MCP server
 
 ```bash
-cd /opt/mobidata-bw-mcp &&
+cd "<INSTALL_DIR>" &&
 OLD=$(git rev-parse --short HEAD) &&
 git pull --ff-only &&
 git diff --stat "$OLD"..HEAD -- deploy/requirements.txt deploy/mobidata-mcp.service &&
@@ -181,7 +181,7 @@ must be clean because the pull is fast-forward only.
 On the server checkout there are no local changes, so it can move to any earlier commit:
 
 ```bash
-cd /opt/mobidata-bw-mcp &&
+cd "<INSTALL_DIR>" &&
 git reset --hard <PREVIOUS_COMMIT> &&
 # The source-only units load this checkout on restart.
 systemctl restart mobidata-mcp      # or mobidata-bot
@@ -196,7 +196,7 @@ On your machine:
 
 ```bash
 git bundle create /tmp/update.bundle <SERVER_COMMIT>..main
-scp /tmp/update.bundle <SSH_ALIAS>:/tmp/
+scp /tmp/update.bundle <SERVER>:/tmp/
 ```
 
 On the server, replace the `git pull` line of the procedures above with:

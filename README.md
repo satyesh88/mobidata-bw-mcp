@@ -41,7 +41,7 @@ Try asking: *"Which fast chargers near Weinsberger Kreuz are free right now?"*
 | Status | `https://mcp.routeiq.de/health` (open) |
 | Limits | 60 requests per minute per key |
 
-**Getting a key:** open a [GitHub issue](../../issues/new) titled "API key request" and say who you are and what you want to build. The maintainer will contact you to hand over the key privately. **Never post a key in an issue, a commit or a screenshot.** Each person or app gets its own key, and any key can be revoked at any time.
+**Getting a key:** open a [GitHub issue](https://github.com/satyesh88/mobidata-bw-mcp/issues/new) titled "API key request" and say who you are and what you want to build. The maintainer will contact you to hand over the key privately. **Never post a key in an issue, a commit or a screenshot.** Each person or app gets its own key, and any key can be revoked at any time.
 
 The examples below use `<KEY>` or the environment variable `MOBIDATA_MCP_KEY`.
 
@@ -440,8 +440,12 @@ uv run python scripts/selftest.py                        # one live call per sou
 npx @modelcontextprotocol/inspector uv run mobidata-bw-mcp
 ```
 
-Tests and examples use only public or synthetic data, never customer data. Issues and pull requests are welcome.
+Tests and examples use only public or synthetic data, never customer data. Issues and pull requests are welcome. See the [contributor guidelines](CONTRIBUTING.md) and [design document](docs/DESIGN.md).
+
+## How this was built
+
+Designed, tested and maintained by Satyesh Shivam (RouteIQ). Built with AI-assisted development tools; architecture, data-source decisions, honesty rules and real-world testing were done by the maintainer. Data: MobiData BW® / NVBW und Datengeber.
 
 ## Licence
 
-The server code is released under the [Apache License 2.0](LICENSE). The source datasets keep their own licences and attribution requirements.
+The server code is released under the [Apache-2.0](LICENSE). The source datasets keep their own licences and attribution requirements.
