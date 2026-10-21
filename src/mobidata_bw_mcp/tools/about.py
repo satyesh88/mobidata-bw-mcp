@@ -19,7 +19,12 @@ def about() -> dict[str, Any]:
             "MobiData BW traffic messages (DATEX II)",
             "OpenStreetMap Nominatim geocoding",
         ],
-        "licences": "Vary by dataset; each result includes source and attribution.",
+        "licences": (
+            "Project: PolyForm Noncommercial 1.0.0; commercial use outside its permissions "
+            "requires a separate written licence from Satyesh Shivam (RouteIQ). "
+            "Earlier Apache-2.0 releases retain their original rights. "
+            "Data licences vary by dataset; each result includes source and attribution."
+        ),
         "caveats": [
             "Scheduled public transport only; no GTFS realtime data.",
             "BFRK surveys may be outdated, coordinates are offset 1.5-4 m, "

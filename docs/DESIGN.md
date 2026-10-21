@@ -34,7 +34,7 @@ are advisory, not legally binding navigation instructions. Coverage depends on e
 | OpenRouteService, when configured | Routing between waypoints for route checks |
 
 [Data coverage](../DATA_COVERAGE.md) describes source coverage and gaps. Dataset licences
-remain separate from the Apache-2.0 licence of the server code.
+remain separate from the PolyForm Noncommercial 1.0.0 licence of the current project.
 
 ## Architecture
 
@@ -91,4 +91,6 @@ Client answers preserve these distinctions and name missing information.
 Tests use synthetic records or public fixtures and mock source failures, caching,
 pagination and normalization. Live diagnostic scripts are separate from the offline suite.
 The [contributor guidelines](../CONTRIBUTING.md) define development commands and data rules.
-The project code is licensed under [Apache-2.0](../LICENSE).
+The current project is licensed under [PolyForm Noncommercial 1.0.0](../LICENSE), with
+separate written licences available for commercial use outside its permissions.
+The [README licence section](../README.md#licence) records the earlier Apache release boundary.

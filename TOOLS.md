@@ -32,7 +32,7 @@ Fields with no value are omitted from items. Live items carry `is_live`, `age_mi
 | [`find_charging`](#find_charging) | E-mobility | Find nearby charge locations, filtering by maximum power and live connector availability. |
 | [`find_sharing`](#find_sharing) | Sharing | Find live sharing stations and free-floating vehicles, counts, and range. |
 | [`find_transit`](#find_transit) | Public transport | Find scheduled-transit stops and stations nearby; this is not realtime service data. |
-| [`get_departures`](#get_departures) | Public transport | Get scheduled departures; dates near today may not be published yet. |
+| [`get_departures`](#get_departures) | Public transport | One merged station-complex timetable, inclusive time window, up to 30 departures. |
 | [`get_roadworks`](#get_roadworks) | Traffic events | Find roadworks active on a date or during any day in a date range. |
 | [`find_traffic_signs`](#find_traffic_signs) | Transport networks | Find traffic signs by radius or bbox. Results are advisory and omit supplementary signs. |
 | [`find_traffic_messages`](#find_traffic_messages) | Traffic events | Find current traffic messages (accidents, congestion, closures, obstructions, works). |
@@ -241,7 +241,7 @@ Example question: Which stops are near Konstanz Bahnhof?
 
 ## get_departures
 
-Get scheduled departures; dates near today may not be published yet.
+One merged station-complex timetable, inclusive time window, up to 30 departures.
 
 Example question: When does the next train leave Heidelberg Hauptbahnhof on Monday at 08:00?
 
@@ -249,8 +249,11 @@ Example question: When does the next train leave Heidelberg Hauptbahnhof on Mond
 |---|---|---|---|
 | `stop_or_station_id` | string | required | Stop or station id from find_transit, for example de:08416:10508:0:4. |
 | `date` | string | optional | Service date (ISO). Defaults to today. |
-| `from_time` | string | optional | Only departures from this time (ISO datetime). |
-| `limit` | integer | default `10` | Maximum departures. |
+| `from_time` | string | optional | Legacy start time (ISO datetime); time_from takes precedence. |
+| `limit` | integer | default `30` | Maximum departures. |
+| `time_from` | string | optional | Inclusive start time (ISO datetime). |
+| `time_to` | string | optional | Inclusive end time (ISO datetime). |
+| `platform_only` | boolean | default `False` | Restrict to the specified platform instead of the station complex. |
 
 **Returns:** route, headsign, departure, scheduled_time, stop_id, stop_name, station_name, wheelchair_accessible.
 
@@ -381,7 +384,7 @@ No parameters.
 
 **Returns:** name, version, description, sources, licences, caveats, contact. Also available as the MCP resource mobidata://about.
 
-**Source:** This server. **Licence:** Apache-2.0 (server code).
+**Source:** This server. **Licence:** PolyForm Noncommercial 1.0.0 (current project); separate commercial licence available.
 
 **Caveats:**
 - This independent project is not affiliated with or endorsed by NVBW.

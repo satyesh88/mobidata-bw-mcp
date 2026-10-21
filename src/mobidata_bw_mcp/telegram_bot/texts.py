@@ -22,7 +22,7 @@ HELP_TEXT = (
 
 ABOUT_TEXT = (
     "<b>MobiData BW Assistant (Demo)</b>\n"
-    "Built by Satyesh Shivam on the open-source MobiData BW MCP server. "
+    "Built by Satyesh Shivam on the source-available MobiData BW MCP server. "
     "Public mobility data remains subject "
     "to each source’s licence and freshness.\n"
     '<a href="https://github.com/satyes88/mobidata-bw-mcp">GitHub</a>'

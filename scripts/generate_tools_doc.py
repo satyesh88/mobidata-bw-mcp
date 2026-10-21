@@ -192,7 +192,10 @@ TOOLS: dict[str, dict[str, Any]] = {
             "stop_or_station_id": "Stop or station id from find_transit, for example "
             "de:08416:10508:0:4.",
             "date": "Service date (ISO). Defaults to today.",
-            "from_time": "Only departures from this time (ISO datetime).",
+            "from_time": "Legacy start time (ISO datetime); time_from takes precedence.",
+            "time_from": "Inclusive start time (ISO datetime).",
+            "time_to": "Inclusive end time (ISO datetime).",
+            "platform_only": "Restrict to the specified platform instead of the station complex.",
             "limit": "Maximum departures.",
         },
     },
@@ -302,7 +305,8 @@ TOOLS: dict[str, dict[str, Any]] = {
     "about": {
         "category": "Meta",
         "source": "This server",
-        "licence": "Apache-2.0 (server code)",
+        "licence": "PolyForm Noncommercial 1.0.0 (current project); "
+        "separate commercial licence available",
         "returns": "name, version, description, sources, licences, caveats, contact. Also "
         "available as the MCP resource mobidata://about.",
         "caveats": ["This independent project is not affiliated with or endorsed by NVBW."],

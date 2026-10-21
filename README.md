@@ -2,7 +2,7 @@
 
 **Your data, one standard interface, usable by any AI agent.**
 
-An open-source [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for public mobility data in Baden-Württemberg from [MobiData BW](https://mobidata-bw.de/). It gives any AI agent the same set of tools for live parking, charging and sharing status, roadworks, traffic messages, traffic signs, scheduled public transport, station accessibility, and route checks for trucks.
+A source-available [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for public mobility data in Baden-Württemberg from [MobiData BW](https://mobidata-bw.de/). It gives any AI agent the same set of tools for live parking, charging and sharing status, roadworks, traffic messages, traffic signs, scheduled public transport, station accessibility, and route checks for trucks.
 
 Plug it into Claude, ChatGPT/OpenAI, Cursor, VS Code, Claude Code, LangChain, or your own bot or app. You don't have to write any integration code per client.
 
@@ -448,4 +448,22 @@ Designed, tested and maintained by Satyesh Shivam (RouteIQ). Built with AI-assis
 
 ## Licence
 
-The server code is released under the [Apache-2.0](LICENSE). The source datasets keep their own licences and attribution requirements.
+The current project is available under [PolyForm Noncommercial 1.0.0](LICENSE).
+Noncommercial use is permitted under its terms. Commercial use outside those permissions
+requires a separate written commercial licence from Satyesh Shivam (RouteIQ), which may
+involve a fee. Request one through a [GitHub issue](https://github.com/satyesh88/mobidata-bw-mcp/issues/new)
+titled "Commercial licence request"; describe the intended use without posting confidential information.
+Opening an issue or receiving an API key does not itself grant a commercial licence.
+
+PolyForm expressly permits use by government institutions, educational institutions and
+certain other noncommercial organisations; see the licence for the full permissions.
+This project is source-available rather than OSI open source.
+
+**Earlier releases:** versions through commit `4826a89cec2ce86a67db76ffd7bf00a1dbc096dd`,
+including tag `v0.3.0`, were released under Apache-2.0. Existing Apache rights, including
+commercial-use rights, remain in effect for that previously released material. This
+change applies prospectively and does not revoke those rights. The former licence is
+preserved in [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt).
+
+The source datasets and third-party dependencies keep their own licences and attribution
+requirements. This project licence does not restrict independent use of MobiData BW data.
