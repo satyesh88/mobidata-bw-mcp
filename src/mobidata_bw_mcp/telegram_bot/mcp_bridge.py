@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import sys
 from collections.abc import AsyncIterator
@@ -68,21 +69,33 @@ def result_text(result: CallToolResult) -> str:
     return "\n".join(parts)
 
 
-def tool_error_result(name: str) -> CallToolResult:
-    message = (
-        "The accessibility lookup failed"
-        if name in {"find_accessible_parking", "stop_accessibility"}
-        else "The mobility lookup failed"
+def tool_failure_message(name: str) -> str:
+    subject = {
+        "find_parking": "parking", "find_accessible_parking": "accessible parking",
+        "stop_accessibility": "station accessibility", "find_charging": "charging",
+        "find_sharing": "sharing", "find_transit": "nearby stops",
+        "get_departures": "timetable", "get_roadworks": "roadworks",
+        "check_route": "route", "find_traffic_signs": "traffic signs",
+        "find_traffic_messages": "traffic messages", "data_health": "data freshness",
+        "search_datasets": "dataset search", "get_dataset": "dataset metadata",
+        "list_layers": "map layers", "query_layer": "map data", "about": "server information",
+    }.get(name, "requested source")
+    return (f"I couldn’t retrieve {subject} data; please try again shortly "
+            "or send a more specific place or street and city.")
+
+
+def tool_error_result(name: str, error: Exception | None = None) -> CallToolResult:
+    logging.getLogger(__name__).warning(
+        "The mobility lookup failed tool=%s error=%s", name,
+        type(error).__name__ if error else "tool_error",
     )
-    return CallToolResult(
-        content=[
-            TextContent(
-                type="text",
-                text=json.dumps({"error": True, "message": message}),
-            )
-        ],
-        isError=True,
-    )
+    # Only our structured clarification is safe to expose; never forward arbitrary exceptions.
+    from ..clients.geocode import LocationClarification
+
+    message = str(error) if isinstance(error, LocationClarification) else json.dumps({
+        "error": True, "message": tool_failure_message(name),
+    })
+    return CallToolResult(content=[TextContent(type="text", text=message)], isError=True)
 
 
 @dataclass
@@ -169,8 +182,8 @@ class MCPBridge:
                         "tool": request.name, "partial": True
                     },
                 )
-            except Exception:
-                return tool_error_result(request.name)
+            except Exception as error:
+                return tool_error_result(request.name, error)
 
         task = asyncio.create_task(invoke())
         request.future.add_done_callback(lambda _: task.cancel() if not task.done() else None)

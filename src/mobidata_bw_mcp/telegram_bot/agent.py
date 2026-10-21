@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -14,7 +14,7 @@ from anthropic import AsyncAnthropic
 from ..geo import haversine_m
 from ..station_complexes import canonical_station_input
 from .formatting import is_search_header
-from .mcp_bridge import MCPBridge, result_text, tool_error_result
+from .mcp_bridge import MCPBridge, result_text, tool_error_result, tool_failure_message
 from .timefmt import localize_clock_text, localize_tool_result
 from .tool_logging import logged_arguments
 
@@ -85,11 +85,12 @@ USE_TOOLS_PROMPT = (
     "Use the tools before answering. Do not state unverified facts. "
     f"If this is off-topic, reply with exactly {OFF_TOPIC_MARKER}."
 )
-EMPTY_ANSWER = "Sorry, I couldn’t produce an answer from the available data. Please try again."
+EMPTY_ANSWER = (
+    "I couldn’t verify the requested information; please send a street and city "
+    "or share your location so I can try a more specific search."
+)
 OFF_TOPIC_EN = "Sorry, I can only help with mobility questions."
 OFF_TOPIC_DE = "Entschuldigung, ich kann nur bei Mobilitätsfragen helfen."
-ACCESSIBILITY_ERROR = "The accessibility lookup failed"
-MOBILITY_ERROR = "The mobility lookup failed"
 _FACT_PATTERN = re.compile(r"\d|\b(?:in|near|around|at|bei|nahe|um|am)\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]+")
 _PLACE_PATTERN = re.compile(r"\b[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)*\b")
 _NON_PLACE_WORDS = {
@@ -193,6 +194,9 @@ class AgentAnswer:
     tool_rounds: int
     places: list[RecommendedPlace]
     off_topic: bool = False
+    clarification: bool = False
+    location_query: str = ""
+    suggestions: list[dict[str, str]] = field(default_factory=list)
 
 
 class MobilityAgent:
@@ -267,6 +271,10 @@ class MobilityAgent:
                     )
             except TimeoutError:
                 break
+            except Exception:
+                if partial_data or tool_error_text:
+                    break
+                raise
             input_tokens += response.usage.input_tokens
             output_tokens += response.usage.output_tokens
             stop_reason = response.stop_reason
@@ -383,8 +391,8 @@ class MobilityAgent:
                             "partial": True,
                         },
                     )
-                except Exception:
-                    return tool_error_result(block.name)
+                except Exception as error:
+                    return tool_error_result(block.name, error)
                 finally:
                     LOGGER.info(
                         "tool name=%s duration_ms=%.0f",
@@ -401,11 +409,20 @@ class MobilityAgent:
                     departures_timed_out = True
                     tool_error_text = "The timetable source didn’t respond."
                 elif result.isError:
-                    tool_error_text = (
-                        ACCESSIBILITY_ERROR
-                        if block.name in {"find_accessible_parking", "stop_accessibility"}
-                        else MOBILITY_ERROR
-                    )
+                    clarification = _location_clarification(serialized_result)
+                    if clarification is not None:
+                        suggestions = clarification.get("suggestions", [])[:3]
+                        labels = [option["label"] for option in suggestions]
+                        text = ("Did you mean " + " or ".join(labels) + "?" if labels else
+                                "I couldn’t identify that place; please send its street and city "
+                                "or share your location.")
+                        return AgentAnswer(
+                            text, input_tokens, output_tokens, tools_used, stop_reason,
+                            tool_rounds + 1, [], clarification=True,
+                            location_query=clarification.get("query", ""), suggestions=suggestions,
+                        )
+                    LOGGER.warning("The mobility lookup failed tool=%s", block.name)
+                    tool_error_text = tool_failure_message(block.name)
 
                 else:
                     partial_data.append(serialized_result)
@@ -454,12 +471,15 @@ class MobilityAgent:
                 block.text for block in response.content if block.type == "text"
             ).strip()
         except Exception:
-            if not partial_data:
+            if tool_error_text and not partial_data:
+                text = tool_error_text
+            elif partial_data:
+                text = (
+                    "Partial source results (remaining checks could not be completed):\n"
+                    + "\n".join(partial_data)[:850]
+                )
+            else:
                 raise
-            text = (
-                "Partial source results (remaining checks could not be completed):\n"
-                + "\n".join(partial_data)[:850]
-            )
         if not tools_used and _is_decline(text):
             text, off_topic = _off_topic_reply(question), True
         elif not tools_used and _looks_factual(text):
@@ -561,6 +581,18 @@ def _passed_date_line(question: str, now: datetime) -> str | None:
         )
     label = f"{passed.day} {passed.month_word}"
     return f"{label} has passed. Showing today's situation. Did you mean {label} {next_year}?"
+
+
+def _location_clarification(text: str) -> dict[str, Any] | None:
+    # FastMCP prefixes exceptions with "Error executing tool ..."; decode only our marker.
+    for match in re.finditer(r"\{", text):
+        try:
+            value, _ = json.JSONDecoder().raw_decode(text[match.start():])
+        except ValueError:
+            continue
+        if isinstance(value, dict) and value.get("error") == "location_clarification":
+            return value
+    return None
 
 
 def _finish_text(

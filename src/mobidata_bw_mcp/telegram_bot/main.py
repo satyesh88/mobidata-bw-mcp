@@ -10,7 +10,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from dotenv import load_dotenv
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import InvalidToken
 from telegram.ext import (
@@ -49,7 +56,11 @@ from .texts import (
 LOGGER = logging.getLogger("mobidata.telegram")
 STATE_TTL = timedelta(minutes=30)
 TELEGRAM_TOKEN_PATTERN = re.compile(r"^\d+:[A-Za-z0-9_-]{20,}$")
-NEAR_ME_PATTERN = re.compile(r"\b(?:near me|hier|in der nähe)\b", re.IGNORECASE)
+NEAR_ME_PATTERN = re.compile(
+    r"\b(?:near me|my place|here|hier|bei mir|mein(?:em)? (?:ort|standort)|"
+    r"in der nähe(?!\s+von\b))\b",
+    re.IGNORECASE,
+)
 
 
 def uses_saved_location(question: str) -> bool:
@@ -92,6 +103,15 @@ def example_keyboard(count: int = 3) -> InlineKeyboardMarkup:
 
 
 @dataclass
+class PendingQuestion:
+    question: str
+    query: str = ""
+    suggestions: list[dict[str, str]] = field(default_factory=list)
+    token: str = field(default_factory=lambda: secrets.token_hex(4))
+    expires_at: datetime = field(default_factory=lambda: datetime.now(UTC) + STATE_TTL)
+
+
+@dataclass
 class Conversation:
     messages: deque[dict[str, str]] = field(default_factory=lambda: deque(maxlen=6))
     expires_at: datetime = field(default_factory=lambda: datetime.now(UTC) + STATE_TTL)
@@ -99,6 +119,7 @@ class Conversation:
 
 class EphemeralState:
     def __init__(self) -> None:
+        self._pending: dict[int, PendingQuestion] = {}
         self._conversations: dict[int, Conversation] = {}
         self._locations: dict[int, tuple[float, float, datetime]] = {}
 
@@ -133,7 +154,15 @@ class EphemeralState:
             return None
         return latitude, longitude
 
+    def pending(self, chat_id: int) -> PendingQuestion | None:
+        value = self._pending.get(chat_id)
+        if value and value.expires_at <= datetime.now(UTC):
+            self._pending.pop(chat_id, None)
+            return None
+        return value
+
     def clear(self, chat_id: int) -> None:
+        self._pending.pop(chat_id, None)
         self._conversations.pop(chat_id, None)
         self._locations.pop(chat_id, None)
 
@@ -224,18 +253,54 @@ class BotHandlers:
         self.state.clear(update.effective_chat.id)
         await update.effective_message.reply_text(RESET_TEXT)
 
-    async def save_location(self, update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def save_location(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if (self.settings.allowed_user_ids
+                and update.effective_user.id not in self.settings.allowed_user_ids):
+            return
         location = update.effective_message.location
         self.state.set_location(
             update.effective_chat.id,
             location.latitude,
             location.longitude,
         )
-        await update.effective_message.reply_text(LOCATION_TEXT)
+        pending = self.state.pending(update.effective_chat.id)
+        await update.effective_message.reply_text(
+            "📍 Location received." if pending else LOCATION_TEXT,
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        if pending:
+            self.state._pending.pop(update.effective_chat.id, None)
+            question = pending.question
+            if not uses_saved_location(question):
+                question = (re.sub(re.escape(pending.query), "my place", question, flags=re.I)
+                            if pending.query else f"{question} near me")
+                if not uses_saved_location(question):
+                    question += " near me"
+            await self._answer(update, context, question)
 
     async def example(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         await query.answer()
+        if query.data.startswith("place:"):
+            pending = self.state.pending(update.effective_chat.id)
+            _, token, index_text = query.data.split(":", 2)
+            if pending is None or pending.token != token:
+                await context.bot.send_message(
+                    update.effective_chat.id,
+                    "That choice expired; please send your question again."
+                )
+                return
+            try:
+                selected = pending.suggestions[int(index_text)]
+            except (IndexError, ValueError):
+                return
+            self.state._pending.pop(update.effective_chat.id, None)
+            question = re.sub(re.escape(pending.query), lambda _: selected["location"],
+                              pending.question, flags=re.I) if pending.query else pending.question
+            if question == pending.question:
+                question += f"\nConfirmed search location: {selected['location']}"
+            await self._answer(update, context, question)
+            return
         try:
             index = int(query.data.partition(":")[2])
             question = EXAMPLES[index]
@@ -244,7 +309,24 @@ class BotHandlers:
         await self._answer(update, context, question)
 
     async def question(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._answer(update, context, update.effective_message.text)
+        question = update.effective_message.text
+        pending = self.state.pending(update.effective_chat.id)
+        if pending:
+            entered_location = question
+            if pending.query and pending.query.casefold() in pending.question.casefold():
+                question = re.sub(re.escape(pending.query), lambda _: entered_location,
+                                  pending.question, flags=re.I)
+            elif uses_saved_location(pending.question):
+                question = NEAR_ME_PATTERN.sub(
+                    lambda _: f"near {entered_location}", pending.question,
+                )
+            else:
+                question = f"{pending.question}\nConfirmed search location: {question}"
+            self.state._pending.pop(update.effective_chat.id, None)
+            await update.effective_message.reply_text(
+                "I’ll use that location.", reply_markup=ReplyKeyboardRemove(),
+            )
+        await self._answer(update, context, question)
 
     async def _answer(
         self,
@@ -266,6 +348,19 @@ class BotHandlers:
         if self.agent is None:
             await context.bot.send_message(chat_id, ERROR_TEXT)
             return
+
+        if uses_saved_location(question) and self.state.location(chat_id) is None:
+            self.state._pending[chat_id] = PendingQuestion(question)
+            await context.bot.send_message(
+                chat_id,
+                "Please share your location or send a street and city so I can search nearby.",
+                reply_markup=ReplyKeyboardMarkup(
+                    [[KeyboardButton("📍 Share my location", request_location=True)]],
+                    resize_keyboard=True, one_time_keyboard=True,
+                ),
+            )
+            return
+        self.state._pending.pop(chat_id, None)
 
         await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
         started = time.monotonic()
@@ -297,8 +392,9 @@ class BotHandlers:
             await context.bot.send_message(chat_id, TIMEOUT_TEXT)
             await delete_progress()
             return
-        except Exception:
-            LOGGER.error("question_failed user=%s", self._user_hash(user_id))
+        except Exception as error:
+            LOGGER.error("question_failed user=%s error=%s",
+                         self._user_hash(user_id), type(error).__name__)
             await context.bot.send_message(chat_id, ERROR_TEXT)
             await delete_progress()
             return
@@ -312,6 +408,17 @@ class BotHandlers:
             answer.input_tokens,
             answer.output_tokens,
         )
+        if answer.clarification:
+            pending = PendingQuestion(question, answer.location_query, answer.suggestions)
+            self.state._pending[chat_id] = pending
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(option["label"][:100],
+                                      callback_data=f"place:{pending.token}:{index}")]
+                for index, option in enumerate(pending.suggestions[:3])
+            ]) if pending.suggestions else None
+            await context.bot.send_message(chat_id, answer.text, reply_markup=keyboard)
+            await delete_progress()
+            return
         self.state.remember(chat_id, "user", question)
         self.state.remember(chat_id, "assistant", answer.text)
         await context.bot.send_message(
@@ -369,7 +476,9 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("help", handlers.help, filters=private))
     application.add_handler(CommandHandler("reset", handlers.reset, filters=private))
     application.add_handler(CommandHandler("about", handlers.about, filters=private))
-    application.add_handler(CallbackQueryHandler(handlers.example, pattern=r"^example:\d+$"))
+    application.add_handler(CallbackQueryHandler(
+        handlers.example, pattern=r"^(?:example:\d+|place:[a-f0-9]{8}:\d+)$",
+    ))
     application.add_handler(MessageHandler(private & filters.LOCATION, handlers.save_location))
     application.add_handler(
         MessageHandler(private & filters.TEXT & ~filters.COMMAND, handlers.question)

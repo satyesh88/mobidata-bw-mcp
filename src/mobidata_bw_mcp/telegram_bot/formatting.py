@@ -6,7 +6,10 @@ from urllib.parse import urlparse
 from .texts import ATTRIBUTION
 
 TRUNCATION_NOTICE = "… (reply 'more' for the rest)"
-EMPTY_REPLY = "Sorry, I couldn’t produce an answer from the available data."
+EMPTY_REPLY = (
+    "I couldn’t verify the requested information; please send a street and city "
+    "or share your location for a more specific search."
+)
 _MARKDOWN_BOLD = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 
 
@@ -79,7 +82,9 @@ def answer_html(text: str, limit: int = 1200) -> str:
         "The accessibility lookup failed",
         "The mobility lookup failed",
     }:
-        return safe_html(text.strip(), limit)
+        subject = "station accessibility" if "accessibility" in text else "mobility"
+        text = (f"I couldn’t retrieve {subject} data; please try again shortly "
+                "or send a street and city.")
     body = text.replace(ATTRIBUTION, "").strip() or EMPTY_REPLY
     suffix = f"\n{ATTRIBUTION}"
     return safe_html(body, limit - len(suffix)) + suffix

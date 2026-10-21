@@ -35,6 +35,9 @@ BUDGET_TEXT = "The demo budget for today is used up. Please try again tomorrow."
 TIMEOUT_TEXT = (
     "That took too long. I’ll answer in parts: ask about parking first, then the station."
 )
-ERROR_TEXT = "Sorry, I couldn’t answer that just now. Please try again."
+ERROR_TEXT = (
+    "The answer service didn’t respond; please try again shortly with a street and city "
+    "or share your location."
+)
 PRIVATE_TEXT = "This demo only answers in a private chat."
 NOT_ALLOWED_TEXT = "This private demo is not available for this account."

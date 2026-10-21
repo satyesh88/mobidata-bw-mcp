@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -28,6 +29,7 @@ from mobidata_bw_mcp.telegram_bot.mcp_bridge import (
     anthropic_tools,
     result_text,
     tool_error_result,
+    tool_failure_message,
 )
 from mobidata_bw_mcp.telegram_bot.texts import ATTRIBUTION, EXAMPLES
 
@@ -98,9 +100,7 @@ def test_tool_error_result_is_explicit_and_does_not_invent_a_cause() -> None:
     result = tool_error_result("stop_accessibility")
 
     assert result.isError
-    assert result_text(result) == (
-        '{"error": true, "message": "The accessibility lookup failed"}'
-    )
+    assert json.loads(result_text(result))["message"] == tool_failure_message("stop_accessibility")
 
 
 def test_places_are_deduplicated_within_fifty_metres() -> None:
@@ -373,7 +373,7 @@ async def test_agent_uses_neutral_accessibility_error_without_model_reason() -> 
 
     answer = await agent.answer("Is Heilbronn Hbf accessible?", [])
 
-    assert answer.text == "The accessibility lookup failed"
+    assert answer.text == tool_failure_message("stop_accessibility")
     assert answer.places == []
     model_messages = agent.client.messages.create.await_args_list[-1].kwargs["messages"]
     assert "\"error\": true" in str(model_messages)
@@ -406,7 +406,7 @@ async def test_agent_converts_bridge_exception_to_explicit_error_result() -> Non
 
     answer = await agent.answer("Is Heilbronn Hbf accessible?", [])
 
-    assert answer.text == "The accessibility lookup failed"
+    assert answer.text == tool_failure_message("stop_accessibility")
     assert "private upstream detail" not in str(
         agent.client.messages.create.await_args_list[-1].kwargs["messages"]
     )
@@ -571,14 +571,15 @@ def test_safe_html_converts_markdown_bold() -> None:
 def test_answer_html_never_returns_attribution_only() -> None:
     rendered = answer_html(ATTRIBUTION)
 
-    assert rendered.startswith("Sorry")
+    assert "please send a street and city" in rendered
     assert rendered.endswith(ATTRIBUTION)
 
 
-def test_tool_error_html_is_exactly_one_line() -> None:
-    assert answer_html("The accessibility lookup failed") == (
-        "The accessibility lookup failed"
-    )
+def test_legacy_tool_error_html_becomes_helpful() -> None:
+    rendered = answer_html("The accessibility lookup failed")
+    assert "station accessibility" in rendered
+    assert "please try again" in rendered
+    assert "lookup failed" not in rendered
 
 
 def test_hourly_rate_limiter_expires_old_messages() -> None:
