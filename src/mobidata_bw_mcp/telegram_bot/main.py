@@ -423,7 +423,9 @@ class BotHandlers:
         self.state.remember(chat_id, "assistant", answer.text)
         await context.bot.send_message(
             chat_id,
-            answer_html(answer.text, limit=4000 if "get_departures" in answer.tools_used else 1200),
+            answer_html(answer.text, limit=4000 if any(tool in answer.tools_used for tool in
+                             {"get_departures", "get_live_departures", "plan_transit_journey"})
+                        else 1200),
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
             reply_markup=(

@@ -5,7 +5,7 @@ description: Answer mobility questions about places and routes in Baden-Württem
 
 # MobiData BW mobility answers
 
-Requires the MobiData BW MCP server (17 tools). This skill only says when to use which tool and how to word the answer; see TOOLS.md in the repository for every parameter and result field.
+Requires the MobiData BW MCP server (19 tools). This skill only says when to use which tool and how to word the answer; see TOOLS.md in the repository for every parameter and result field.
 
 ## Core rules
 
@@ -39,7 +39,9 @@ Places near a location
 - Stops and stations: `find_transit`.
 
 Public transport
-- Departures: call `get_departures` once with the station name, `time_from`, `time_to` and `limit=30`. Do not loop over platform IDs. Use `find_transit` only when nearby stops or station coordinates are needed. Times are scheduled, not real time; interpret `wheelchair_accessible` using the rules below.
+- Live departures: call `get_live_departures` once with `stop_or_location`, `time_from`, `time_to` and `limit=30`. Distinguish scheduled and estimated times, delay, cancellation and platform changes. A missing prediction does not mean on time. Its GTFS fallback is scheduled only; pass on its warning. Do not retry across platforms.
+- Scheduled-only departures: call `get_departures` once with the station name, `time_from`, `time_to` and `limit=30`. Use `find_transit` only for nearby stops or station coordinates. Interpret `wheelchair_accessible` using the rules below.
+- A-to-B public transport: use `plan_transit_journey` with origin and destination. Ask for a missing origin. Use `arrival_time` for arrive-by questions, or `departure_time` for leave-at questions, never both. Set `wheelchair=true` when needed; requested no-stairs/level-boarding preferences are not proof of an accessible journey or working lifts. Preserve walking/access and transfer legs, show uncertainties, and never recommend a cancelled service. No journey fallback may be invented from unrelated departures.
 
 Accessibility of a stop
 - `stop_accessibility` for a named stop or the nearest stop: step-free access, platform heights, lifts, ramps, tactile guidance, toilets, parking.
@@ -177,8 +179,10 @@ Keep internal per-platform query details, retries, and query strategy out of ans
 
 
 ### Station-wide departure windows
-For departures, call `get_departures` once with the station name and `time_from`/`time_to`
-ISO timestamps, `limit=30`. The interval includes both endpoints. Do not loop over platforms.
+For scheduled-only departures, call `get_departures` once with the station name and `time_from`/`time_to`
+ISO timestamps, `limit=30`. For live departures use `get_live_departures` with
+`stop_or_location` and the same time window. The interval includes both endpoints.
+Do not loop over platforms.
 Stops/platform IDs expand to the whole station complex by default. Set platform_only=true only when the user explicitly
 asks for that one platform. A bare “Gleis 4” needs a station name; never guess the city.
 Use the connected tool schema. If the time-window parameters are unavailable, say the

@@ -7,7 +7,7 @@ from mobidata_bw_mcp.server import mcp
 async def test_server_exposes_expected_tools_and_parameters() -> None:
     tools = {tool.name: tool for tool in await mcp.list_tools()}
 
-    assert len(tools) == 17
+    assert len(tools) == 19
     assert {"location", "radius_m", "limit"} == set(
         tools["find_accessible_parking"].inputSchema["properties"]
     )

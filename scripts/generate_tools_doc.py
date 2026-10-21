@@ -199,6 +199,56 @@ TOOLS: dict[str, dict[str, Any]] = {
             "limit": "Maximum departures.",
         },
     },
+    "get_live_departures": {
+        "category": "Public transport",
+        "source": "NVBW EFA-BW TRIAS 1.2; optional scheduled GTFS fallback",
+        "licence": DL,
+        "returns": "route, headsign, stop_name, scheduled_time, estimated_time, time, "
+        "delay_minutes, platform, scheduled_platform, platform_changed, cancelled, is_live. "
+        "The source changes to GTFS when fallback is used.",
+        "caveats": [
+            "Requires TRIAS_REQUESTOR_REF on the MCP server; requests use XML over HTTPS.",
+            "Missing predictions do not mean on time. Operator coverage varies.",
+            "Coordinate queries discover up to three stop groups within 500 m; "
+            "coverage may be incomplete.",
+            "Identical successful responses are cached for 30 seconds; station IDs for 24 hours. "
+            "GTFS fallback is scheduled only.",
+        ],
+        "example": "Are departures from Heilbronn Hbf delayed right now?",
+        "params": {
+            "stop_or_location": "Station/place, explicit TRIAS stop ID or {lat, lon}.",
+            "time_from": "Window start; defaults to now. Naive times mean Europe/Berlin.",
+            "time_to": "Window end; defaults to +90 minutes. Maximum window: 6 hours.",
+            "limit": "Maximum departures (1–30).",
+            "fallback_to_schedule": "Use explicitly labelled GTFS scheduled data on TRIAS failure.",
+        },
+    },
+    "plan_transit_journey": {
+        "category": "Public transport",
+        "source": "NVBW EFA-BW TRIAS 1.2 TripRequest",
+        "licence": DL,
+        "returns": "Journey departure, arrival, duration, transfers and all legs. Timed legs "
+        "carry board/alight stops, scheduled and estimated times, platforms and cancellation. "
+        "Wheelchair preferences are reported separately from verified accessibility.",
+        "caveats": [
+            "Requires configured TRIAS access. No route is invented if the source fails.",
+            "Arrival and departure constraints are alternatives. Naive times mean Europe/Berlin.",
+            "Accessibility preferences do not guarantee working lifts or an accessible journey.",
+            "Coordinate journeys request up to 15 minutes of walking access.",
+            "Fares, booking and automatic journey monitoring are not implemented.",
+        ],
+        "example": "Find a wheelchair-suitable journey from Stuttgart Hbf to Heilbronn Hbf, "
+        "arriving before 09:00 tomorrow.",
+        "params": {
+            "origin": "Starting place, stop ID or {lat, lon}.",
+            "destination": "Destination place, stop ID or {lat, lon}.",
+            "departure_time": "Depart-at timestamp; defaults to now unless arrival_time is given.",
+            "arrival_time": "Arrive-by timestamp; cannot be combined with departure_time.",
+            "wheelchair": "Request no steps/stairs/escalators and level boarding.",
+            "max_transfers": "Maximum transfers (0–5); zero is filtered locally.",
+            "limit": "Maximum journey alternatives (1–5).",
+        },
+    },
     "get_roadworks": {
         "category": "Traffic events",
         "source": "Roadworks GeoJSON (api.mobidata-bw.de/datasets/traffic/roadworks)",

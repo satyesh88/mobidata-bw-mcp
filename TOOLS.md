@@ -1,6 +1,6 @@
 # MobiData BW MCP: Tool Reference
 
-This reference covers all 17 tools. Parameter names, types and defaults are generated from the running server; regenerate with `uv run python scripts/generate_tools_doc.py`.
+This reference covers all 19 tools. Parameter names, types and defaults are generated from the running server; regenerate with `uv run python scripts/generate_tools_doc.py`.
 
 ## Result format
 
@@ -33,6 +33,8 @@ Fields with no value are omitted from items. Live items carry `is_live`, `age_mi
 | [`find_sharing`](#find_sharing) | Sharing | Find live sharing stations and free-floating vehicles, counts, and range. |
 | [`find_transit`](#find_transit) | Public transport | Find scheduled-transit stops and stations nearby; this is not realtime service data. |
 | [`get_departures`](#get_departures) | Public transport | One merged station-complex timetable, inclusive time window, up to 30 departures. |
+| [`get_live_departures`](#get_live_departures) | Public transport | Get TRIAS departures with scheduled/predicted times, delays and cancellations. |
+| [`plan_transit_journey`](#plan_transit_journey) | Public transport | Plan A-to-B public transport journeys through EFA-BW TRIAS, including arrive-by searches. |
 | [`get_roadworks`](#get_roadworks) | Traffic events | Find roadworks active on a date or during any day in a date range. |
 | [`find_traffic_signs`](#find_traffic_signs) | Transport networks | Find traffic signs by radius or bbox. Results are advisory and omit supplementary signs. |
 | [`find_traffic_messages`](#find_traffic_messages) | Traffic events | Find current traffic messages (accidents, congestion, closures, obstructions, works). |
@@ -263,6 +265,57 @@ Example question: When does the next train leave Heidelberg Hauptbahnhof on Mond
 - Scheduled times, not real time.
 - Dates close to today may not be published yet.
 - The timetable database can time out; retrying usually works.
+
+## get_live_departures
+
+Get TRIAS departures with scheduled/predicted times, delays and cancellations.
+
+Example question: Are departures from Heilbronn Hbf delayed right now?
+
+| Parameter | Type | Required or default | Description |
+|---|---|---|---|
+| `stop_or_location` | string or object | required | Station/place, explicit TRIAS stop ID or {lat, lon}. |
+| `time_from` | string | optional | Window start; defaults to now. Naive times mean Europe/Berlin. |
+| `time_to` | string | optional | Window end; defaults to +90 minutes. Maximum window: 6 hours. |
+| `limit` | integer | default `10` | Maximum departures (1–30). |
+| `fallback_to_schedule` | boolean | default `True` | Use explicitly labelled GTFS scheduled data on TRIAS failure. |
+
+**Returns:** route, headsign, stop_name, scheduled_time, estimated_time, time, delay_minutes, platform, scheduled_platform, platform_changed, cancelled, is_live. The source changes to GTFS when fallback is used.
+
+**Source:** NVBW EFA-BW TRIAS 1.2; optional scheduled GTFS fallback. **Licence:** Datenlizenz Deutschland - Namensnennung 2.0.
+
+**Caveats:**
+- Requires TRIAS_REQUESTOR_REF on the MCP server; requests use XML over HTTPS.
+- Missing predictions do not mean on time. Operator coverage varies.
+- Coordinate queries discover up to three stop groups within 500 m; coverage may be incomplete.
+- Identical successful responses are cached for 30 seconds; station IDs for 24 hours. GTFS fallback is scheduled only.
+
+## plan_transit_journey
+
+Plan A-to-B public transport journeys through EFA-BW TRIAS, including arrive-by searches.
+
+Example question: Find a wheelchair-suitable journey from Stuttgart Hbf to Heilbronn Hbf, arriving before 09:00 tomorrow.
+
+| Parameter | Type | Required or default | Description |
+|---|---|---|---|
+| `origin` | string or object | required | Starting place, stop ID or {lat, lon}. |
+| `destination` | string or object | required | Destination place, stop ID or {lat, lon}. |
+| `departure_time` | string | optional | Depart-at timestamp; defaults to now unless arrival_time is given. |
+| `arrival_time` | string | optional | Arrive-by timestamp; cannot be combined with departure_time. |
+| `wheelchair` | boolean | default `False` | Request no steps/stairs/escalators and level boarding. |
+| `max_transfers` | integer | optional | Maximum transfers (0–5); zero is filtered locally. |
+| `limit` | integer | default `3` | Maximum journey alternatives (1–5). |
+
+**Returns:** Journey departure, arrival, duration, transfers and all legs. Timed legs carry board/alight stops, scheduled and estimated times, platforms and cancellation. Wheelchair preferences are reported separately from verified accessibility.
+
+**Source:** NVBW EFA-BW TRIAS 1.2 TripRequest. **Licence:** Datenlizenz Deutschland - Namensnennung 2.0.
+
+**Caveats:**
+- Requires configured TRIAS access. No route is invented if the source fails.
+- Arrival and departure constraints are alternatives. Naive times mean Europe/Berlin.
+- Accessibility preferences do not guarantee working lifts or an accessible journey.
+- Coordinate journeys request up to 15 minutes of walking access.
+- Fares, booking and automatic journey monitoring are not implemented.
 
 ## get_roadworks
 

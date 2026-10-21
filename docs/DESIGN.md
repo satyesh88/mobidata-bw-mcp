@@ -3,7 +3,7 @@
 ## Goals
 
 The server gives MCP clients a consistent, read-only interface to public mobility data
-in Baden-Württemberg. Its 17 tools cover discovery, spatial queries, parking, charging,
+in Baden-Württemberg. Its 19 tools cover discovery, spatial queries, parking, charging,
 sharing, scheduled departures, surveyed accessibility, traffic events, signs and route
 checks. Results carry provenance and limitations so clients can distinguish observations,
 schedules and missing information.
@@ -14,7 +14,8 @@ The [README](../README.md) covers installation and client integration.
 ## Non-goals
 
 The server does not modify upstream datasets, manage bookings or process customer data.
-Scheduled departures are not real-time predictions. Accessibility surveys do not establish
+GTFS scheduled departures are not real-time predictions; TRIAS provides predictions only
+where operator data is available. Accessibility surveys do not establish
 current lift operation or guarantee an accessible journey. Traffic-sign and route findings
 are advisory, not legally binding navigation instructions. Coverage depends on each source.
 
@@ -27,6 +28,7 @@ are advisory, not legally binding navigation instructions. Coverage depends on e
 | ParkAPI v3 | Parking facilities, capacities and available live occupancy |
 | NVBW BFRK CSV surveys | Station and stop accessibility, platform edges, lifts and ramps |
 | MobiData BW GTFS PostgREST API | Scheduled departures and stop hierarchies |
+| NVBW EFA-BW TRIAS 1.2 | Live departures and A-to-B journeys with configured requestor access |
 | Roadworks GeoJSON | Planned and active roadworks |
 | DATEX II traffic messages | Accidents, congestion, closures and obstructions |
 | Traffic-sign export | Surveyed signs and truck restrictions |
@@ -63,6 +65,12 @@ are explicit in the tool schemas. Resolved locations remain visible in query met
 Station departures merge the station complex, including configured sibling stop groups,
 into a time-sorted list. Explicit platform-only requests retain their narrower scope.
 Time windows bound timetable queries. A source timeout is distinct from an empty result.
+
+TRIAS uses XML requests over HTTPS with a server-side requestor key. Live departures
+retain scheduled and estimated times separately; a failure can fall back to explicitly
+labelled GTFS schedules. Journey planning supports departure or arrival constraints and
+wheelchair preferences without asserting verified accessibility. Short response caching
+is separate from observation freshness. The original scheduled tool remains compatible.
 
 ### Result envelopes and provenance
 

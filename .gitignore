@@ -9,3 +9,8 @@ dist/
 build/
 *.egg-info/
 .vscode/settings.json
+
+# Private presentation preparation and walkthroughs.
+/local-notes/
+**/[Mm][Oo][Bb][Ii][Dd][Aa][Tt][Aa]*[Ww][Aa][Ll][Kk]*.md
+**/[Mm][Oo][Bb][Ii][Dd][Aa][Tt][Aa]*[Ww][Oo][Rr][Kk][Tt][Hh][Rr][Oo][Uu][Gg][Hh]*.md

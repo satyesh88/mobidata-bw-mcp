@@ -2,6 +2,9 @@
 
 Snapshot: 2026-10-17, from the live CKAN catalogue (`https://mobidata-bw.de/api/3/action/`), live ParkAPI and live GeoServer WFS.
 
+Implementation coverage updated 2026-10-22 for the optional TRIAS tools. Catalogue
+and feed inventory counts below retain the dated snapshot above.
+
 ## Status legend
 
 | Status | Meaning |
@@ -43,7 +46,7 @@ All 10 website categories exist as CKAN groups. 8 of 10 have at least one dedica
 | 7 | Traffic events (`verkehrsereignisse`) | 2 | `get_roadworks`, `find_traffic_messages`, `check_route` | [tools/roadworks.py](src/mobidata_bw_mcp/tools/roadworks.py), [tools/traffic_messages.py](src/mobidata_bw_mcp/tools/traffic_messages.py), [tools/route_check.py](src/mobidata_bw_mcp/tools/route_check.py), [clients/static_files.py](src/mobidata_bw_mcp/clients/static_files.py), [clients/traffic_messages.py](src/mobidata_bw_mcp/clients/traffic_messages.py), [clients/routing.py](src/mobidata_bw_mcp/clients/routing.py) |
 | 8 | Transport networks (`verkehrsnetze`) | 6 | `find_traffic_signs`, `check_route`, `query_layer` | [tools/signs.py](src/mobidata_bw_mcp/tools/signs.py), [tools/route_check.py](src/mobidata_bw_mcp/tools/route_check.py), [tools/spatial.py](src/mobidata_bw_mcp/tools/spatial.py) |
 | 9 | Traffic counting data (`verkehrszaehldaten`) | 14 | none (metadata only) | [tools/discovery.py](src/mobidata_bw_mcp/tools/discovery.py) |
-| 10 | Public transport (`oeffentlicher-personenverkehr`) | 24 | `find_transit`, `get_departures`, `stop_accessibility`, `query_layer` | [tools/transit.py](src/mobidata_bw_mcp/tools/transit.py), [clients/gtfs.py](src/mobidata_bw_mcp/clients/gtfs.py), [clients/wfs.py](src/mobidata_bw_mcp/clients/wfs.py) |
+| 10 | Public transport (`oeffentlicher-personenverkehr`) | 24 | `find_transit`, `get_departures`, `get_live_departures`, `plan_transit_journey`, `stop_accessibility`, `query_layer` | [tools/transit.py](src/mobidata_bw_mcp/tools/transit.py), [clients/gtfs.py](src/mobidata_bw_mcp/clients/gtfs.py), [clients/wfs.py](src/mobidata_bw_mcp/clients/wfs.py) |
 
 Cross-cutting files: [tools/discovery.py](src/mobidata_bw_mcp/tools/discovery.py) (`search_datasets`, `get_dataset`, `list_layers` for all 146 catalogue datasets), [tools/spatial.py](src/mobidata_bw_mcp/tools/spatial.py) (`query_layer` for any of the 13 WFS layers), [clients/ckan.py](src/mobidata_bw_mcp/clients/ckan.py), [clients/geocode.py](src/mobidata_bw_mcp/clients/geocode.py).
 
@@ -56,6 +59,7 @@ Cross-cutting files: [tools/discovery.py](src/mobidata_bw_mcp/tools/discovery.py
 | GeoServer WFS `sharing_stations`, `sharing_vehicles` | `find_sharing`, `data_health` | `wfs_url` |
 | GeoServer WFS `transit_stops`, `transit_stations_with_served_routes` | `find_transit` | `wfs_url` |
 | GTFS arrivals/departures API | `get_departures` (scheduled only) | `gtfs_url` |
+| NVBW EFA-BW TRIAS 1.2 | `get_live_departures`, `plan_transit_journey` (configured access) | `TRIAS_URL`, `TRIAS_REQUESTOR_REF` |
 | `roadworks_geojson.json` | `get_roadworks`, `check_route` | `roadworks_url` |
 | `incidents_lmsbw.datex2.xml` (DATEX II traffic messages, about 35 situations, refreshed every few minutes) | `find_traffic_messages`, `check_route` | `traffic_messages_url` |
 | `VZ-Daten/signs.geojson` | `find_traffic_signs`, `check_route` | `signs_url` |
@@ -210,7 +214,7 @@ No tool. All 14 are Not covered. These are traffic and passenger statistics: his
 | `gebundelte-soll-fahrplandaten-fur-baden-wurttemberg-rheinland-pfalz-und-saarland-ohne-linienverlauf` | Indirect (R3) | Wider bundle; only the BW part is needed and served |
 | `gebundelte-fahrplandaten-fur-baden-wurttemberg-rheinland-pfalz-und-saarland-mit-linienverlauf` | Indirect (R3) | Wider bundle; only the BW part is needed and served |
 | `daten-barrierefreiheit` | Indirect (R9) | BFRK CSV used instead of the API |
-| `trias` (real-time timetable) | Not covered (R5) | Real-time departures would be the most valuable addition, but TRIAS needs a personal requestor key. Access is granted on request by email to mobidata-bw@nvbw.de. Until then `get_departures` is scheduled data only |
+| `trias` (real-time timetable) | Covered | `get_live_departures` and `plan_transit_journey`; requires configured requestor access. Predictions depend on operator coverage; GTFS fallback is scheduled only |
 | `mitfahren` (Amarillo, GTFS-RT) | Not covered (R10) | Ride-matching offers rather than a stop or timetable lookup; a candidate for a later tool |
 | `opnv-guteklassen` | Not covered (R1, R2) | Service-quality isochrones as shapefile; an analysis product |
 | `nachfragekarte-spnv-bw` | Not covered (R1) | Rail demand analysis map (GeoJSON) |
@@ -236,8 +240,8 @@ Counts are group memberships (97). A dataset in two groups is counted twice. 76 
 | Traffic events | 2 | 2 | 0 | 0 | 0 |
 | Transport networks | 6 | 1 | 1 | 0 | 4 |
 | Traffic counting data | 14 | 0 | 0 | 0 | 14 |
-| Public transport | 24 | 3 | 1 | 10 | 10 |
-| **Total** | **97** | **32** | **4** | **12** | **49** |
+| Public transport | 24 | 4 | 1 | 10 | 9 |
+| **Total** | **97** | **33** | **4** | **12** | **48** |
 
 Reason frequency (counted from the rows above; a row can carry several codes):
 
@@ -250,7 +254,6 @@ Reason frequency (counted from the rows above; a row can carry several codes):
 | R7 broken upstream URL (404) | 5 | Not covered |
 | R6 data too thin | 2 | Not covered |
 | R8 portal link only | 2 | Not covered |
-| R5 registration required (TRIAS) | 1 | Not covered |
 | R3 redundant bundle | 8 | Indirect |
 | R9 same data via another channel | 4 | Indirect |
 
@@ -261,7 +264,7 @@ Strongest coverage is for live, location-based questions (parking, sharing, char
 - One ParkAPI endpoint is not one dataset. It aggregates 71 upstream sources, so a parking "dataset" is covered through its source, not as a file.
 - On-street parking is returned but static. None of the 22,169 on-street records has live occupancy.
 - `find_parking` fetches every site in the radius, sorts by distance and only then applies the limit, so the nearest sites are never cut off. In very dense areas (more than about 1,000 sites) it narrows the radius and says so in a warning.
-- `get_departures` is scheduled data. No real-time public transport until a TRIAS requestor key is obtained (R5).
+- `get_departures` remains scheduled data. TRIAS tools add live predictions and journey planning when configured; missing predictions do not confirm on-time running. Wheelchair routing preferences do not verify lift operation.
 - Traffic messages are a state-wide DATEX II snapshot with German text. Records with the same text and place are merged. If the feed is down, `check_route` still returns roadworks and signs and says that incidents are missing.
 - Motorcycle parking data exists for very few places, and `find_parking` says so when `purpose=MOTORCYCLE`.
 - "Indirect" rows for GTFS bundles are inferred from overlap with the statewide feed, not verified operator by operator.

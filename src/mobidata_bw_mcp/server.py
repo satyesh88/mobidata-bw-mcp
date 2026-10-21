@@ -24,6 +24,7 @@ from .tools import (
     spatial,
     traffic_messages,
     transit,
+    trias,
 )
 from .tools.about import about as about_data
 
@@ -70,6 +71,8 @@ def create_server(
     mcp.tool()(charging.find_charging)
     mcp.tool()(sharing.find_sharing)
     mcp.tool()(transit.find_transit)
+    mcp.tool()(trias.get_live_departures)
+    mcp.tool()(trias.plan_transit_journey)
 
     @mcp.tool()
     async def get_departures(

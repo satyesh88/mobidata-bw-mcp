@@ -213,3 +213,20 @@ tools = await client.get_tools()  # pass these tools to your LangGraph agent
 ## Data licences
 
 Results carry their own source, licence and attribution fields; keep them when showing data to users.
+
+## TRIAS access
+
+Configure `TRIAS_URL=https://efa-bw.de/trias` and `TRIAS_REQUESTOR_REF=<REQUESTOR_KEY>`
+in the MCP service's protected environment file (for the example units,
+`/etc/mobidata-mcp/env`). The Telegram bot calls the hosted server and does not need
+the TRIAS key in its own environment. A bot launching a local stdio server passes
+its environment to that subprocess, so configure the variables there instead.
+
+Never put the key in a tool argument, prompt, unit file, repository or diagnostic output.
+If NVBW supplies a different endpoint, use that HTTPS endpoint; credentials and query
+strings in URLs are rejected and redirects are not followed. Restart `mobidata-mcp`
+after environment changes. Restart `mobidata-bot` after this update to rediscover the
+19 tools and reload the skill. No other services need restarting.
+
+Without configured TRIAS access, live departures can fall back to labelled GTFS
+schedules. Journey planning returns a configuration error and never fabricates a route.

@@ -15,6 +15,7 @@ def about() -> dict[str, Any]:
             "ParkAPI v3",
             "BFRK accessibility surveys for Baden-Württemberg stops and stations",
             "GTFS PostgREST",
+            "EFA-BW TRIAS departures and journey planning (requires configured access)",
             "MobiData BW roadworks and traffic-sign GeoJSON exports",
             "MobiData BW traffic messages (DATEX II)",
             "OpenStreetMap Nominatim geocoding",
@@ -26,7 +27,8 @@ def about() -> dict[str, Any]:
             "Data licences vary by dataset; each result includes source and attribution."
         ),
         "caveats": [
-            "Scheduled public transport only; no GTFS realtime data.",
+            "GTFS departures are scheduled. TRIAS predictions depend on operator coverage; "
+            "missing live data never confirms on-time running.",
             "BFRK surveys may be outdated, coordinates are offset 1.5-4 m, "
             "and elevator details are not live status.",
             "Traffic-sign results are not legally binding and omit supplementary signs.",

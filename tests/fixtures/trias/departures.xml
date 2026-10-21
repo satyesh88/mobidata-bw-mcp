@@ -1,0 +1,72 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Trias xmlns="http://www.vdv.de/trias" xmlns:siri="http://www.siri.org.uk/siri" version="1.2">
+  <ServiceDelivery>
+    <siri:ResponseTimestamp>2026-10-22T07:00:00Z</siri:ResponseTimestamp>
+    <siri:Status>true</siri:Status>
+    <DeliveryPayload>
+      <StopEventResponse>
+        <StopEventResult>
+          <ResultId>synthetic-1</ResultId>
+          <StopEvent>
+            <ThisCall>
+              <CallAtStop>
+                <StopPointRef>de:08121:26:3:2</StopPointRef>
+                <StopPointName>
+                  <Text>Heilbronn Hbf</Text>
+                </StopPointName>
+                <PlannedBay>
+                  <Text>2</Text>
+                </PlannedBay>
+                <EstimatedBay>
+                  <Text>3</Text>
+                </EstimatedBay>
+                <ServiceDeparture>
+                  <TimetabledTime>2026-10-22T07:05:00Z</TimetabledTime>
+                  <EstimatedTime>2026-10-22T07:12:00Z</EstimatedTime>
+                </ServiceDeparture>
+              </CallAtStop>
+            </ThisCall>
+            <Service>
+              <ServiceSection>
+                <PublishedLineName>
+                  <Text>RE 8</Text>
+                </PublishedLineName>
+              </ServiceSection>
+              <DestinationText>
+                <Text>Stuttgart Hbf</Text>
+              </DestinationText>
+              <Cancelled>false</Cancelled>
+            </Service>
+          </StopEvent>
+        </StopEventResult>
+        <StopEventResult>
+          <ResultId>synthetic-2</ResultId>
+          <StopEvent>
+            <ThisCall>
+              <CallAtStop>
+                <StopPointRef>de:08121:1114</StopPointRef>
+                <StopPointName>
+                  <Text>Hbf/Willy-Brandt-Pl.</Text>
+                </StopPointName>
+                <ServiceDeparture>
+                  <TimetabledTime>2026-10-22T07:08:00Z</TimetabledTime>
+                </ServiceDeparture>
+              </CallAtStop>
+            </ThisCall>
+            <Service>
+              <ServiceSection>
+                <PublishedLineName>
+                  <Text>S 4</Text>
+                </PublishedLineName>
+              </ServiceSection>
+              <DestinationText>
+                <Text>Öhringen</Text>
+              </DestinationText>
+              <Cancelled>true</Cancelled>
+            </Service>
+          </StopEvent>
+        </StopEventResult>
+      </StopEventResponse>
+    </DeliveryPayload>
+  </ServiceDelivery>
+</Trias>

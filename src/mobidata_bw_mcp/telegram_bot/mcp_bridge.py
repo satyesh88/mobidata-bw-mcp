@@ -74,6 +74,8 @@ def tool_failure_message(name: str) -> str:
         "find_parking": "parking", "find_accessible_parking": "accessible parking",
         "stop_accessibility": "station accessibility", "find_charging": "charging",
         "find_sharing": "sharing", "find_transit": "nearby stops",
+        "get_live_departures": "live departures",
+        "plan_transit_journey": "public transport journeys",
         "get_departures": "timetable", "get_roadworks": "roadworks",
         "check_route": "route", "find_traffic_signs": "traffic signs",
         "find_traffic_messages": "traffic messages", "data_health": "data freshness",
@@ -177,7 +179,8 @@ class MCPBridge:
                 return CallToolResult(
                     content=[], isError=True,
                     structuredContent={
-                        "error": ("source_timeout" if request.name == "get_departures"
+                        "error": ("source_timeout"
+                                  if request.name in {"get_departures", "get_live_departures"}
                                   else "source timed out"),
                         "tool": request.name, "partial": True
                     },

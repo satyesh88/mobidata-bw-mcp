@@ -2,7 +2,7 @@
 
 **Your data, one standard interface, usable by any AI agent.**
 
-A source-available [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for public mobility data in Baden-Württemberg from [MobiData BW](https://mobidata-bw.de/). It gives any AI agent the same set of tools for live parking, charging and sharing status, roadworks, traffic messages, traffic signs, scheduled public transport, station accessibility, and route checks for trucks.
+A source-available [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for public mobility data in Baden-Württemberg from [MobiData BW](https://mobidata-bw.de/). It gives any AI agent the same set of tools for live parking, charging and sharing status, roadworks, traffic messages, traffic signs, scheduled and live public transport, journey planning, station accessibility, and route checks for trucks.
 
 Plug it into Claude, ChatGPT/OpenAI, Cursor, VS Code, Claude Code, LangChain, or your own bot or app. You don't have to write any integration code per client.
 
@@ -14,7 +14,7 @@ Plug it into Claude, ChatGPT/OpenAI, Cursor, VS Code, Claude Code, LangChain, or
 
 | Part | What it is | Where |
 |---|---|---|
-| **MCP server** | 17 tools over MobiData BW data, usable from any MCP client | `src/mobidata_bw_mcp/` |
+| **MCP server** | 19 tools over MobiData BW data, usable from any MCP client | `src/mobidata_bw_mcp/` |
 | **Agent skill** | Instructions that teach an agent *how* to use the tools well: which tool for which question, freshness, caveats, attribution | `skill/SKILL.md` |
 | **Reference bot** | A Telegram bot built on the server, which you can copy for WhatsApp, Slack or your own app | `src/mobidata_bw_mcp/telegram_bot/` |
 
@@ -384,6 +384,7 @@ Use `--insecure-no-auth` only for local testing. Ask NVBW about fair use before 
 | `find_charging` | Nearby chargers by power and current availability |
 | `find_sharing` | Sharing stations and free-floating vehicles |
 | `find_transit`, `get_departures` | Nearby stops and scheduled departures |
+| `get_live_departures`, `plan_transit_journey` | TRIAS live predictions and A-to-B public transport journeys (requires access) |
 | `get_roadworks` | Roadworks active on a given date |
 | `find_traffic_signs` | Nearby traffic signs, including truck restrictions |
 | `find_traffic_messages` | Current accidents, congestion, closures and obstructions (DATEX II) |
@@ -392,6 +393,34 @@ Use `--insecure-no-auth` only for local testing. Ask NVBW about fair use before 
 | `about` | Sources and caveats (also available as the MCP resource `mobidata://about`) |
 
 [TOOLS.md](TOOLS.md) is the full reference: every parameter, result field, source, licence and caveat.
+
+## Optional TRIAS public transport access
+
+The MCP server supports live departure predictions and end-to-end journey planning through
+NVBW's [TRIAS service](https://mobidata-bw.de/dataset/trias). Configure the credentials on
+the **MCP server**, not in tool arguments or the agent prompt:
+
+```dotenv
+TRIAS_URL=https://efa-bw.de/trias
+TRIAS_REQUESTOR_REF=<requestor key supplied by NVBW>
+```
+
+For local development, keep these in the ignored `.env` file and launch with
+`uv run --env-file .env mobidata-bw-mcp`. Hosted deployments use the MCP service's
+protected environment file; see [deployment instructions](deploy/README.md#trias-access).
+
+`get_live_departures` distinguishes scheduled and estimated times, delays, cancellations
+and platform changes. If TRIAS is unavailable, it can return explicitly labelled GTFS
+scheduled data. `get_departures` retains its existing scheduled-only interface.
+`plan_transit_journey` accepts an origin, destination and either departure or arrival time,
+plus optional wheelchair preferences and transfer limits. Coordinate journeys request
+up to 15 minutes of walking access; live departures discover up to three stop groups
+within 500 m. These limits can exclude options. Requested preferences do not
+prove end-to-end accessibility or current lift operation; BFRK surveys remain separate evidence.
+
+The server now exposes 19 tools. Fares, ticket booking and background journey alerts are
+outside this integration. Identical successful TRIAS responses are cached for 30 seconds; live coverage varies
+by operator. Never commit credentials or XML requests containing the requestor key.
 
 ## Example questions
 
@@ -412,6 +441,7 @@ Every result names its source endpoint, licence (or missing licence), attributio
 - GeoServer WFS
 - ParkAPI v3
 - the GTFS PostgREST API
+- EFA-BW TRIAS departures and journey planning (with configured access)
 - the daily traffic-sign export
 - roadworks GeoJSON
 - DATEX II traffic messages
@@ -421,7 +451,7 @@ Every result names its source endpoint, licence (or missing licence), attributio
 Licences vary by dataset, most often CC BY 4.0 and Datenlizenz Deutschland.
 
 **Caveats:**
-- Public transport data is the GTFS schedule, not real time.
+- `get_departures` is scheduled GTFS data. TRIAS live predictions depend on operator coverage; a missing prediction does not confirm on-time running. Scheduled fallback is labelled.
 - BFRK accessibility surveys come from different years and may be outdated, so check the survey year in the result. Object coordinates are deliberately offset by about 1.5–4 m.
 - BFRK lift records describe the surveyed equipment, not whether a lift is working right now.
 - Traffic-sign data is not legally binding, and municipal coverage varies.

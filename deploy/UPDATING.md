@@ -122,7 +122,7 @@ systemctl is-active mobidata-bot mobidata-mcp &&
 journalctl -u mobidata-bot -n 15 --no-pager
 ```
 
-Expect `ready tools=17` and `Application started`. If `deploy/requirements-bot.txt` changed, run this
+Expect `ready tools=19` and `Application started`. If `deploy/requirements-bot.txt` changed, run this
 before the restart:
 
 ```bash

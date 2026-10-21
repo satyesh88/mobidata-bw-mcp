@@ -1,0 +1,76 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Trias xmlns="http://www.vdv.de/trias" xmlns:siri="http://www.siri.org.uk/siri" version="1.2">
+  <ServiceDelivery>
+    <siri:ResponseTimestamp>2026-10-22T06:00:00Z</siri:ResponseTimestamp>
+    <siri:Status>true</siri:Status>
+    <DeliveryPayload>
+      <TripResponse>
+        <TripResult>
+          <ResultId>synthetic-trip</ResultId>
+          <Trip>
+            <TripId>synthetic-trip</TripId>
+            <Duration>PT1H</Duration>
+            <StartTime>2026-10-22T06:00:00Z</StartTime>
+            <EndTime>2026-10-22T07:00:00Z</EndTime>
+            <Interchanges>0</Interchanges>
+            <TripLeg>
+              <LegId>1</LegId>
+              <ContinuousLeg>
+                <Duration>PT5M</Duration>
+                <TimeWindowStart>2026-10-22T06:00:00Z</TimeWindowStart>
+                <TimeWindowEnd>2026-10-22T06:05:00Z</TimeWindowEnd>
+              </ContinuousLeg>
+            </TripLeg>
+            <TripLeg>
+              <LegId>2</LegId>
+              <TimedLeg>
+                <LegBoard>
+                  <StopPointRef>de:08111:6115</StopPointRef>
+                  <StopPointName>
+                    <Text>Stuttgart Hbf</Text>
+                  </StopPointName>
+                  <PlannedBay>
+                    <Text>4</Text>
+                  </PlannedBay>
+                  <ServiceDeparture>
+                    <TimetabledTime>2026-10-22T06:05:00Z</TimetabledTime>
+                    <EstimatedTime>2026-10-22T06:07:00Z</EstimatedTime>
+                  </ServiceDeparture>
+                </LegBoard>
+                <LegAlight>
+                  <StopPointRef>de:08121:26</StopPointRef>
+                  <StopPointName>
+                    <Text>Heilbronn Hbf</Text>
+                  </StopPointName>
+                  <ServiceArrival>
+                    <TimetabledTime>2026-10-22T06:55:00Z</TimetabledTime>
+                    <EstimatedTime>2026-10-22T06:57:00Z</EstimatedTime>
+                  </ServiceArrival>
+                </LegAlight>
+                <Service>
+                  <ServiceSection>
+                    <PublishedLineName>
+                      <Text>RE 8</Text>
+                    </PublishedLineName>
+                    <Mode>
+                      <PtMode>rail</PtMode>
+                    </Mode>
+                  </ServiceSection>
+                  <DestinationText>
+                    <Text>Heilbronn Hbf</Text>
+                  </DestinationText>
+                </Service>
+              </TimedLeg>
+            </TripLeg>
+            <TripLeg>
+              <LegId>3</LegId>
+              <InterchangeLeg>
+                <Duration>PT5M</Duration>
+              </InterchangeLeg>
+            </TripLeg>
+          </Trip>
+        </TripResult>
+      </TripResponse>
+    </DeliveryPayload>
+  </ServiceDelivery>
+</Trias>

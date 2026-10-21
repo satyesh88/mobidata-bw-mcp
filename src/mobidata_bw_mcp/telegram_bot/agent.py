@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -51,9 +52,16 @@ Telegram channel rules (these override anything above):
   Never infer that no departures are published from an error. Do not retry for a platform.
 - For public transport apps in Baden-Württemberg suggest DB Navigator or bwegt, never VRR.
 - Do not write the "Searched around" line yourself; the application adds it.
-- For departures, call get_departures once with the station name and time_from/time_to
-  timestamps. Use limit=30. Do not loop over platforms. Only set platform_only=true if
+- For live departures use get_live_departures once with stop_or_location and time_from/time_to.
+  Its GTFS fallback is explicitly scheduled only. For a scheduled-only request use get_departures
+  once with the station name and time_from/time_to timestamps. Use limit=30.
+  Do not loop over platforms. Only set platform_only=true if
   the user explicitly requests a single platform. Never report per-platform query results.
+- For A-to-B public transport use plan_transit_journey. For an arrival deadline use arrival_time;
+  departure_time and arrival_time are alternatives. Request wheelchair=true when relevant, but
+  never claim preferences prove accessibility or lift operation. Ask for a missing origin.
+- Keep scheduled_time and estimated_time distinct. Missing prediction does not mean on time;
+  show cancellations and platform changes. Never recommend a cancelled service.
 - If the user asks for departures in a window, list all supplied departures in time order,
   one short line each with line, destination, stop/platform and accessibility (up to 30 lines).
   If truncated is true, say the result cap was reached; do not claim the window is complete.
@@ -370,7 +378,8 @@ class MobilityAgent:
                             json.dumps(logged_arguments(arguments), ensure_ascii=False),
                             json.dumps(logged_arguments(block.input), ensure_ascii=False))
                 try:
-                    if block.name == "get_departures" and departures_failed:
+                    if (block.name in {"get_departures", "get_live_departures"}
+                            and departures_failed):
                         return CallToolResult(content=[], isError=True, structuredContent={
                             "error": "source_timeout",
                             "message": "The timetable source didn’t respond.",
@@ -385,7 +394,8 @@ class MobilityAgent:
                         content=[],
                         isError=True,
                         structuredContent={
-                            "error": ("source_timeout" if block.name == "get_departures"
+                            "error": ("source_timeout"
+                                      if block.name in {"get_departures", "get_live_departures"}
                                       else "source timed out"),
                             "tool": block.name,
                             "partial": True,
@@ -404,11 +414,16 @@ class MobilityAgent:
             for block, result in zip(tool_blocks, results, strict=True):
                 tools_used.append(block.name)
                 serialized_result = result_text(result)
-                timed_out = block.name == "get_departures" and "source_timeout" in serialized_result
+                timed_out = (block.name in {"get_departures", "get_live_departures"}
+                             and "source_timeout" in serialized_result)
+                trias_error = False
+                if block.name in {"get_live_departures", "plan_transit_journey"}:
+                    with suppress(ValueError, AttributeError):
+                        trias_error = bool(json.loads(serialized_result).get("error"))
                 if timed_out:
                     departures_timed_out = True
                     tool_error_text = "The timetable source didn’t respond."
-                elif result.isError:
+                elif result.isError or trias_error:
                     clarification = _location_clarification(serialized_result)
                     if clarification is not None:
                         suggestions = clarification.get("suggestions", [])[:3]
@@ -432,15 +447,17 @@ class MobilityAgent:
                         recommended_places,
                         _recommended_places(serialized_result, block.name, block.input),
                     )
+                max_chars = 16000 if block.name in {
+                    "get_departures", "get_live_departures", "plan_transit_journey",
+                } else 8000
                 tool_results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": _model_result_text(serialized_result, _item_limit(block.name),
-                            max_chars=16000 if block.name == "get_departures" else 8000)[
-                            :16000 if block.name == "get_departures" else 8000
-                        ],
-                        "is_error": bool(result.isError) or timed_out,
+                        "content": _model_result_text(
+                            serialized_result, _item_limit(block.name), max_chars=max_chars,
+                        )[:max_chars],
+                        "is_error": bool(result.isError) or timed_out or trias_error,
                     }
                 )
             messages.append({"role": "user", "content": tool_results})
@@ -864,8 +881,10 @@ def recommended_place(text: str, places: list[RecommendedPlace]) -> RecommendedP
 
 def _item_limit(tool_name: str) -> int:
     """Place tools feed navigation buttons, so the model sees three; catalogue lists show more."""
-    if tool_name == "get_departures":
+    if tool_name in {"get_departures", "get_live_departures"}:
         return 30
+    if tool_name == "plan_transit_journey":
+        return 5
     return 3 if tool_name in _PLACE_TOOLS else 20
 
 
