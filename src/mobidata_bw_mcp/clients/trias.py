@@ -41,8 +41,8 @@ class TriasError(SourceError):
 
 def configuration() -> tuple[str, str]:
     key = os.getenv("TRIAS_REQUESTOR_REF", "").strip()
-    url = os.getenv("TRIAS_URL", "https://efa-bw.de/trias").strip()
-    if not key:
+    url = os.getenv("TRIAS_URL", "").strip()
+    if not key or not url:
         raise TriasError("not_configured")
     parts = urlsplit(url)
     if (
@@ -52,6 +52,7 @@ def configuration() -> tuple[str, str]:
         or parts.password
         or parts.query
         or parts.fragment
+        or key in url
     ):
         raise TriasError("invalid_endpoint")
     return url, key

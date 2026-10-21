@@ -205,9 +205,13 @@ TOOLS: dict[str, dict[str, Any]] = {
         "licence": DL,
         "returns": "route, headsign, stop_name, scheduled_time, estimated_time, time, "
         "delay_minutes, platform, scheduled_platform, platform_changed, cancelled, is_live. "
+        "Paging metadata includes next_cursor, available_count and window_complete. "
         "The source changes to GTFS when fallback is used.",
         "caveats": [
-            "Requires TRIAS_REQUESTOR_REF on the MCP server; requests use XML over HTTPS.",
+            "Requires TRIAS_URL and TRIAS_REQUESTOR_REF on the MCP server; "
+            "requests use XML over HTTPS.",
+            "Source requests page through the time window; pass next_cursor as cursor "
+            "with the same window to retrieve subsequent result pages.",
             "Missing predictions do not mean on time. Operator coverage varies.",
             "Coordinate queries discover up to three stop groups within 500 m; "
             "coverage may be incomplete.",
@@ -221,6 +225,7 @@ TOOLS: dict[str, dict[str, Any]] = {
             "time_to": "Window end; defaults to +90 minutes. Maximum window: 6 hours.",
             "limit": "Maximum departures (1–30).",
             "fallback_to_schedule": "Use explicitly labelled GTFS scheduled data on TRIAS failure.",
+            "cursor": "Result offset; use the previous response's next_cursor (default 0).",
         },
     },
     "plan_transit_journey": {

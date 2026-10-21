@@ -5,7 +5,7 @@ import re
 import time
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,6 +18,7 @@ from .formatting import is_search_header
 from .mcp_bridge import MCPBridge, result_text, tool_error_result, tool_failure_message
 from .timefmt import localize_clock_text, localize_tool_result
 from .tool_logging import logged_arguments
+from .transit_answers import render_departures, render_journeys
 
 OFF_TOPIC_MARKER = "[[OFF_TOPIC]]"
 CHANNEL_LINE = "Channel: Telegram (mobile chat app)"
@@ -62,9 +63,17 @@ Telegram channel rules (these override anything above):
   never claim preferences prove accessibility or lift operation. Ask for a missing origin.
 - Keep scheduled_time and estimated_time distinct. Missing prediction does not mean on time;
   show cancellations and platform changes. Never recommend a cancelled service.
-- If the user asks for departures in a window, list all supplied departures in time order,
-  one short line each with line, destination, stop/platform and accessibility (up to 30 lines).
-  If truncated is true, say the result cap was reached; do not claim the window is complete.
+- For every departure use scheduled HH:MM, then est. HH:MM (+N min), on time, or
+  no live prediction. Never label an estimated time as scheduled. Times are Europe/Berlin.
+- Show at most 8 departures on a phone, then a short summary and More? for remaining items.
+  This applies to TRIAS and GTFS. Continue the remaining items when the user asks More.
+- Never mention result caps, internal limits or where a list ended. Follow next_cursor or
+  extend the time query to cover the requested window. If verification fails, say so simply.
+- For trip legs say departs platform X, arrives platform Y. Use change only for real
+  transfers between services; different platform numbers at different stations are not a change.
+- Between 00:00 and 04:00 Europe/Berlin, tomorrow morning or morgen früh means today's
+  morning. At other times use the next calendar date. State the assumed date once, or ask
+  if it conflicts with an explicit date. Use the resolved date for every tool timestamp.
 - Never mention tool names, internal queries, retries, or per-platform query details.
 - Timetable accessibility unknown means "no accessibility info in the timetable";
   never interpret 0 or a missing flag as not wheelchair accessible.
@@ -117,7 +126,7 @@ _NON_PLACE_WORDS = {
     "Sorry",
 }
 _GERMAN_PATTERN = re.compile(
-    r"\b(?:ich|mir|mich|hier|nähe|parkplatz|baustelle|lade|gibt|sind|ist|um)\b",
+    r"\b(?:ich|mir|mich|hier|nähe|parkplatz|baustelle|lade|gibt|sind|ist|um|morgen|abfahrten|züge)\b",
     re.IGNORECASE,
 )
 _MOBILITY_PATTERN = re.compile(
@@ -205,6 +214,8 @@ class AgentAnswer:
     clarification: bool = False
     location_query: str = ""
     suggestions: list[dict[str, str]] = field(default_factory=list)
+    departure_data: dict[str, Any] | None = None
+    departure_request: dict[str, Any] | None = None
 
 
 class MobilityAgent:
@@ -235,7 +246,16 @@ class MobilityAgent:
         system_prompt = _system_prompt(request_time)
         messages: list[dict[str, Any]] = [*history]
         prompt = question
-        date_line = _passed_date_line(question, request_time)
+        morning = _morning_date(question, request_time)
+        date_line = _passed_date_line(question, request_time) or _morning_line(
+            question, request_time
+        )
+        if morning is not None:
+            prompt += (
+                f"\nResolved morning date: {morning.isoformat()}. "
+                "Apply this date to every requested departure and arrival time. "
+                "The application states the date assumption; do not repeat it."
+            )
         date_context = _yearless_date_context(question, request_time)
         if date_context:
             prompt += f"\n\n{date_context}"
@@ -265,6 +285,10 @@ class MobilityAgent:
         off_topic = False
         tool_error_text: str | None = None
         departures_timed_out = False
+        departure_data = None
+        departure_request = None
+        journey_data = None
+        departure_calls = {}
         for _round in range(self.max_tool_rounds + 1):
             if time.monotonic() >= tool_deadline:
                 break
@@ -329,6 +353,7 @@ class MobilityAgent:
                         grounding_retry = True
                         continue
                     text, off_topic = _ungrounded_reply(question)
+                text = _transit_text(text, tools_used, departure_data, journey_data, question)
                 final_text = _finish_text(
                     text,
                     question,
@@ -346,6 +371,8 @@ class MobilityAgent:
                     tool_rounds,
                     _places_for_answer(final_text, recommended_places),
                     off_topic=off_topic,
+                    departure_data=departure_data,
+                    departure_request=departure_request,
                 )
             if _round >= self.max_tool_rounds:
                 break
@@ -363,6 +390,29 @@ class MobilityAgent:
 
                 began = time.monotonic()
                 arguments = dict(block.input)
+                if morning is not None:
+                    for key in (
+                        "time_from",
+                        "time_to",
+                        "from_time",
+                        "departure_time",
+                        "arrival_time",
+                    ):
+                        if isinstance(arguments.get(key), str):
+                            with suppress(ValueError):
+                                value = datetime.fromisoformat(
+                                    arguments[key].replace("Z", "+00:00")
+                                )
+                                if value.tzinfo is not None:
+                                    value = value.astimezone(ZoneInfo("Europe/Berlin"))
+                                arguments[key] = value.replace(
+                                    year=morning.year,
+                                    month=morning.month,
+                                    day=morning.day,
+                                    tzinfo=ZoneInfo("Europe/Berlin"),
+                                ).isoformat()
+                    if "date" in arguments:
+                        arguments["date"] = morning.isoformat()
                 if block.name == "get_departures":
                     station = arguments.get("stop_or_station_id")
                     if isinstance(station, str):
@@ -371,20 +421,32 @@ class MobilityAgent:
                         ):
                             station = "Heilbronn Hbf " + station
                         arguments["stop_or_station_id"] = (
-                            station if arguments.get("platform_only")
+                            station
+                            if arguments.get("platform_only")
                             else canonical_station_input(station)
                         )
-                LOGGER.info("tool_call name=%s arguments=%s requested_arguments=%s", block.name,
-                            json.dumps(logged_arguments(arguments), ensure_ascii=False),
-                            json.dumps(logged_arguments(block.input), ensure_ascii=False))
+                if block.name in {"get_departures", "get_live_departures"}:
+                    departure_calls[block.id] = arguments
+                LOGGER.info(
+                    "tool_call name=%s arguments=%s requested_arguments=%s",
+                    block.name,
+                    json.dumps(logged_arguments(arguments), ensure_ascii=False),
+                    json.dumps(logged_arguments(block.input), ensure_ascii=False),
+                )
                 try:
-                    if (block.name in {"get_departures", "get_live_departures"}
-                            and departures_failed):
-                        return CallToolResult(content=[], isError=True, structuredContent={
-                            "error": "source_timeout",
-                            "message": "The timetable source didn’t respond.",
-                            "partial": True,
-                        })
+                    if (
+                        block.name in {"get_departures", "get_live_departures"}
+                        and departures_failed
+                    ):
+                        return CallToolResult(
+                            content=[],
+                            isError=True,
+                            structuredContent={
+                                "error": "source_timeout",
+                                "message": "The timetable source didn’t respond.",
+                                "partial": True,
+                            },
+                        )
                     async with asyncio.timeout(
                         min(TOOL_TIMEOUT, max(0, tool_deadline - time.monotonic()))
                     ):
@@ -394,9 +456,11 @@ class MobilityAgent:
                         content=[],
                         isError=True,
                         structuredContent={
-                            "error": ("source_timeout"
-                                      if block.name in {"get_departures", "get_live_departures"}
-                                      else "source timed out"),
+                            "error": (
+                                "source_timeout"
+                                if block.name in {"get_departures", "get_live_departures"}
+                                else "source timed out"
+                            ),
                             "tool": block.name,
                             "partial": True,
                         },
@@ -414,8 +478,10 @@ class MobilityAgent:
             for block, result in zip(tool_blocks, results, strict=True):
                 tools_used.append(block.name)
                 serialized_result = result_text(result)
-                timed_out = (block.name in {"get_departures", "get_live_departures"}
-                             and "source_timeout" in serialized_result)
+                timed_out = (
+                    block.name in {"get_departures", "get_live_departures"}
+                    and "source_timeout" in serialized_result
+                )
                 trias_error = False
                 if block.name in {"get_live_departures", "plan_transit_journey"}:
                     with suppress(ValueError, AttributeError):
@@ -428,18 +494,46 @@ class MobilityAgent:
                     if clarification is not None:
                         suggestions = clarification.get("suggestions", [])[:3]
                         labels = [option["label"] for option in suggestions]
-                        text = ("Did you mean " + " or ".join(labels) + "?" if labels else
-                                "I couldn’t identify that place; please send its street and city "
-                                "or share your location.")
+                        text = (
+                            "Did you mean " + " or ".join(labels) + "?"
+                            if labels
+                            else "I couldn’t identify that place; please send its street and city "
+                            "or share your location."
+                        )
                         return AgentAnswer(
-                            text, input_tokens, output_tokens, tools_used, stop_reason,
-                            tool_rounds + 1, [], clarification=True,
-                            location_query=clarification.get("query", ""), suggestions=suggestions,
+                            text,
+                            input_tokens,
+                            output_tokens,
+                            tools_used,
+                            stop_reason,
+                            tool_rounds + 1,
+                            [],
+                            clarification=True,
+                            location_query=clarification.get("query", ""),
+                            suggestions=suggestions,
                         )
                     LOGGER.warning("The mobility lookup failed tool=%s", block.name)
                     tool_error_text = tool_failure_message(block.name)
 
                 else:
+                    if block.name in {
+                        "get_departures",
+                        "get_live_departures",
+                        "plan_transit_journey",
+                    }:
+                        with suppress(ValueError, AttributeError):
+                            payload = json.loads(serialized_result)
+                            if isinstance(payload.get("items"), list) and payload["items"]:
+                                if block.name == "plan_transit_journey":
+                                    journey_data = payload
+                                else:
+                                    departure_data = payload
+                                    departure_request = {
+                                        "tool": block.name,
+                                        "arguments": departure_calls.get(
+                                            block.id, dict(block.input)
+                                        ),
+                                    }
                     partial_data.append(serialized_result)
                     serialized_result = localize_tool_result(serialized_result)
                     searched_place = searched_place or _resolved_place(serialized_result)
@@ -447,15 +541,24 @@ class MobilityAgent:
                         recommended_places,
                         _recommended_places(serialized_result, block.name, block.input),
                     )
-                max_chars = 16000 if block.name in {
-                    "get_departures", "get_live_departures", "plan_transit_journey",
-                } else 8000
+                max_chars = (
+                    16000
+                    if block.name
+                    in {
+                        "get_departures",
+                        "get_live_departures",
+                        "plan_transit_journey",
+                    }
+                    else 8000
+                )
                 tool_results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
                         "content": _model_result_text(
-                            serialized_result, _item_limit(block.name), max_chars=max_chars,
+                            serialized_result,
+                            _item_limit(block.name),
+                            max_chars=max_chars,
                         )[:max_chars],
                         "is_error": bool(result.isError) or timed_out or trias_error,
                     }
@@ -501,6 +604,7 @@ class MobilityAgent:
             text, off_topic = _off_topic_reply(question), True
         elif not tools_used and _looks_factual(text):
             text, off_topic = _ungrounded_reply(question)
+        text = _transit_text(text, tools_used, departure_data, journey_data, question)
         final_text = _finish_text(
             text,
             question,
@@ -518,7 +622,49 @@ class MobilityAgent:
             tool_rounds,
             _places_for_answer(final_text, recommended_places),
             off_topic=off_topic,
+            departure_data=departure_data,
+            departure_request=departure_request,
         )
+
+
+def _transit_text(
+    text: str, tools: list[str], departures: dict | None, journeys: dict | None, question: str
+) -> str:
+    german = bool(_GERMAN_PATTERN.search(question))
+    if departures and set(tools) <= {
+        "get_departures",
+        "get_live_departures",
+        "find_transit",
+        "plan_transit_journey",
+    }:
+        rendered = render_departures(
+            departures,
+            german=german,
+            accessibility=bool(
+                re.search(r"wheelchair|accessible|barriere|rollstuhl", question, re.I)
+            ),
+        )[0]
+        return rendered + ("\n" + render_journeys(journeys, german) if journeys else "")
+    if journeys and set(tools) <= {"plan_transit_journey", "find_transit"}:
+        return render_journeys(journeys, german)
+    return text
+
+
+def _morning_date(question: str, now: datetime) -> date | None:
+    if not re.search(r"\b(?:tomorrow morning|morgen früh)\b", question, re.I):
+        return None
+    if _yearless_dates(question, now) or re.search(r"\b\d{4}-\d{2}-\d{2}\b", question):
+        return None
+    return now.date() if now.hour < 4 else now.date() + timedelta(days=1)
+
+
+def _morning_line(question: str, now: datetime) -> str | None:
+    day = _morning_date(question, now)
+    if day is None:
+        return None
+    if _GERMAN_PATTERN.search(question) or "morgen früh" in question.casefold():
+        return f"Ich nehme den Morgen des {day:%d.%m.%Y} an."
+    return f"Assuming you mean the morning of {day:%d %b %Y}."
 
 
 def _looks_factual(text: str) -> bool:
@@ -538,7 +684,9 @@ def _system_prompt(now: datetime) -> str:
         f"{CHANNEL_LINE}\nCurrent Europe/Berlin date and time: {timestamp}.\n\n"
         f"{SYSTEM_PROMPT}\n"
         "A date without a year means that day this year. If it has already passed, do not use "
-        "next year: use today's date instead, as the context note says."
+        "next year: use today's date instead, as the context note says. "
+        f"For tomorrow morning / morgen früh the resolved date now is "
+        f"{(now.date() if now.hour < 4 else now.date() + timedelta(days=1)).isoformat()}."
     )
 
 
@@ -604,7 +752,7 @@ def _location_clarification(text: str) -> dict[str, Any] | None:
     # FastMCP prefixes exceptions with "Error executing tool ..."; decode only our marker.
     for match in re.finditer(r"\{", text):
         try:
-            value, _ = json.JSONDecoder().raw_decode(text[match.start():])
+            value, _ = json.JSONDecoder().raw_decode(text[match.start() :])
         except ValueError:
             continue
         if isinstance(value, dict) and value.get("error") == "location_clarification":
@@ -622,6 +770,16 @@ def _finish_text(
 ) -> str:
     final_text = _without_unsolicited_corrections(text or EMPTY_ANSWER, question)
     final_text = localize_clock_text(final_text, request_time)
+    final_text = "\n".join(
+        line
+        for line in final_text.splitlines()
+        if not re.search(
+            r"result cap|result limit|list ended|list ends|Ergebnislimit|Liste endete|"
+            r"internal limit",
+            line,
+            re.I,
+        )
+    )
     if tool_error_text is not None:
         return tool_error_text
     if searched_place is not None:
@@ -718,10 +876,15 @@ def _recommended_places(
     if isinstance(query_location, dict) and all(
         query_location.get(key) is not None for key in ("lat", "lon")
     ):
-        places.append(RecommendedPlace(
-            name=fallback_address, lat=float(query_location["lat"]),
-            lon=float(query_location["lon"]), kind="search", address=fallback_address,
-        ))
+        places.append(
+            RecommendedPlace(
+                name=fallback_address,
+                lat=float(query_location["lat"]),
+                lon=float(query_location["lon"]),
+                kind="search",
+                address=fallback_address,
+            )
+        )
     for item in value.get("items", []):
         if not isinstance(item, dict) or item.get("lat") is None or item.get("lon") is None:
             continue
@@ -849,8 +1012,7 @@ def _mention_position(text: str, place: RecommendedPlace) -> int | None:
 def _places_for_answer(text: str, places: list[RecommendedPlace]) -> list[RecommendedPlace]:
     """Only named facilities, in textual order; search anchors are a last resort."""
     body = "\n".join(
-        line for line in text.splitlines()
-        if not line.lstrip().startswith(("📍", "Daten:"))
+        line for line in text.splitlines() if not line.lstrip().startswith(("📍", "Daten:"))
     ).casefold()
     mentioned = [
         (position, index, place)
@@ -871,7 +1033,8 @@ def recommended_place(text: str, places: list[RecommendedPlace]) -> RecommendedP
     if match:
         named = match[1].casefold()
         matches = [
-            (position, place) for place in places
+            (position, place)
+            for place in places
             if (position := _mention_position(named, place)) is not None
         ]
         if matches:
@@ -924,7 +1087,8 @@ def _default_place_name(kind: str) -> str:
 
 def _with_searched_place(text: str, place: tuple[str, str | None], question: str) -> str:
     text = "\n".join(
-        line for line in text.splitlines()
+        line
+        for line in text.splitlines()
         if not line.lstrip().startswith("📍") and not is_search_header(line)
     ).strip()
     label, place_type = place

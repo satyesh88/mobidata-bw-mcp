@@ -13,11 +13,12 @@ Requires the MobiData BW MCP server (19 tools). This skill only says when to use
 - Pass a place name as the user wrote it, or explicit `lat` and `lon`. If a place is ambiguous, ask one short clarification.
 - State the resolved place from `query.location` (not your own guess) once, for example "Searched around: Stuttgart Hauptbahnhof". If the application adds the header, do not write another one.
 - Always show freshness: live (with age in minutes), stale (older than 30 minutes), no live feed, scheduled, or surveyed (with the survey year). Quote the returned timestamp.
-- Always pass on every item in `warnings`. If `truncated` is true, say the result cap was reached and the list may be incomplete.
+- Pass on user-relevant freshness, disruption and accessibility warnings. Never mention internal result caps, limits, query pages or “the list ended at HH:MM”. Continue through `next_cursor` or extend the departure query when needed; if verification fails, say further departures could not be verified.
 - If you state a count, it must equal the number of items you list.
 - Times are Europe/Berlin local time, written HH:MM. Convert any UTC timestamp from a result and never write "UTC".
 - A date without a year means that day in the current year. If that day has already passed, do not silently use next year: say so in the first line, show today's situation, and ask whether the user meant next year, for example "15 Oct has passed. Showing today's situation. Did you mean 15 Oct 2027?" Pass dates to tools as ISO dates.
 - Reply in the user's language, German or English.
+- Between 00:00 and 04:00 Europe/Berlin, “tomorrow morning” or “morgen früh” means this morning, today's date. State that date assumption once. At other times use the next calendar date and state it; ask if an explicit date conflicts. Use the resolved date consistently in all tool timestamps.
 - End every answer with the attribution line: Daten: MobiData BW® / NVBW und Datengeber. Name the licence when the user asks for it or the result flags it.
 - If a tool fails or returns nothing, say the lookup failed or found nothing. Never guess a reason and never fill the gap from memory.
 - Answer only the current question.
@@ -91,7 +92,7 @@ Live parking, charging and sharing
 Choose the length from the channel. Use the channel named in the system prompt or conversation (for example "Channel: Telegram"). If no channel is stated, assume a desktop, web or IDE chat.
 
 Chat apps (Telegram, WhatsApp, SMS-like)
-- At most about five short lines for ordinary questions, no tables, sparse emoji. Use about eight lines for drive/public-transport comparisons, and up to 30 lines for requested departure lists. Lead with the answer, then freshness and the key caveat.
+- At most about five short lines for ordinary questions, no tables, sparse emoji. Use about eight lines for drive/public-transport comparisons, and at most 8 departures for requested departure lists, followed by a short summary and “More?” when further departures are available. Lead with the answer, then freshness and the key caveat.
 - Offer "More?" at the end of the last line instead of adding detail.
 - When the user asks for a full list (for example all datasets of a category), list every item as one short line.
 
@@ -178,6 +179,10 @@ otherwise say that the surveyed edge-to-track mapping is missing.
 Keep internal per-platform query details, retries, and query strategy out of answers.
 
 
+### Consistent departure and trip wording
+For every departure, show `scheduled HH:MM` followed by `est. HH:MM (+N min)`, “on time” only when the prediction matches, or “no live prediction”. Compute delay from EstimatedTime minus TimetabledTime; convert each timestamp to Europe/Berlin independently. Never use the predicted time as the scheduled time.
+For a trip leg, say “departs platform X, arrives platform Y”. Different platform numbers at different stations are not a change. Use “change” only for real transfers between services, based on the returned transfer count. Report an actual last-minute departure platform change separately.
+
 ### Station-wide departure windows
 For scheduled-only departures, call `get_departures` once with the station name and `time_from`/`time_to`
 ISO timestamps, `limit=30`. For live departures use `get_live_departures` with
@@ -188,4 +193,4 @@ asks for that one platform. A bare “Gleis 4” needs a station name; never gue
 Use the connected tool schema. If the time-window parameters are unavailable, say the
 server needs an update for this workflow; do not emulate it with per-platform calls.
 Never report per-platform query results. For a requested departure window list all supplied
-items in time order, including the stop/platform name, up to 30 short lines in Telegram.
+items in time order, including the stop/platform name. Telegram shows at most 8 departures, then a summary and “More?”; continue remaining items when asked.

@@ -156,8 +156,7 @@ def _envelope(
             "Datenlizenz Deutschland - Namensnennung 2.0",
         ),
         data_timestamp=parse_timestamp(stamp.text if stamp is not None else None),
-        warnings=warnings
-        + (["Result cap reached; more options may exist."] if len(items) >= limit else []),
+        warnings=warnings,
     ).compact()
 
 
@@ -174,21 +173,67 @@ def _departure_request(
     return request
 
 
+async def _departure_pages(
+    target: Location | str | api.StopRef, start: datetime, end: datetime, limit: int
+) -> tuple[list[Element], bool]:
+    """Cover the window using overlapping scheduled-time pages, including tied times."""
+    documents = []
+    cursor = start
+    requested = max(30, limit)
+    try:
+        async with asyncio.timeout(10):
+            for _ in range(8):
+                document = await api.request(_departure_request(target, cursor, end, requested))
+                documents.append(document)
+                events = document.findall(".//t:StopEvent", api.NS)
+                times = [
+                    parse_timestamp(
+                        _text(
+                            _find(event, "ThisCall/CallAtStop"), "ServiceDeparture/TimetabledTime"
+                        )
+                    )
+                    for event in events
+                ]
+                times = [time for time in times if time is not None]
+                if len(events) < requested or times and max(times) > end:
+                    return documents, True
+                if not times:
+                    return documents, False
+                latest = max(times)
+                if latest <= cursor:
+                    if requested >= 240:
+                        return documents, False
+                    requested *= 2  # retrieve all departures tied at this timestamp
+                else:
+                    cursor = latest  # overlap the boundary; merged identities remove duplicates
+            return documents, False
+    except TimeoutError:
+        if not documents:
+            raise api.TriasError("source_timeout") from None
+        return documents, False
+    except api.TriasError:
+        if not documents:
+            raise
+        return documents, False
+
+
 async def get_live_departures(
     stop_or_location: LocationInput | dict[str, Any],
     time_from: datetime | None = None,
     time_to: datetime | None = None,
     limit: int = 10,
     fallback_to_schedule: bool = True,
+    cursor: int = 0,
 ) -> dict[str, Any]:
     """Get TRIAS departures with scheduled/predicted times, delays and cancellations.
 
     Supply a station/place or coordinates once; do not loop over platform IDs.
     Coordinates query up to three stop groups within 500 m. GTFS fallback is labelled scheduled.
     Naive times mean Europe/Berlin. Missing predictions never confirm on-time running.
+    Source requests page through the window. Pass next_cursor back as cursor for more results.
     """
-    if not 1 <= limit <= 30:
-        raise ValueError("limit must be between 1 and 30")
+    if not 1 <= limit <= 30 or cursor < 0:
+        raise ValueError("limit must be between 1 and 30 and cursor must not be negative")
     start = _time(time_from)
     end = _time(time_to) if time_to else start + timedelta(minutes=90)
     if end <= start or end - start > timedelta(hours=6):
@@ -198,10 +243,16 @@ async def get_live_departures(
         resolved = await _location(stop_or_location)
         targets = await api.nearby_stops(resolved) if isinstance(resolved, Location) else [resolved]
         responses = await asyncio.gather(
-            *(api.request(_departure_request(target, start, end, limit)) for target in targets),
+            *(_departure_pages(target, start, end, limit) for target in targets),
             return_exceptions=True,
         )
-        documents = [response for response in responses if isinstance(response, Element)]
+        documents = [
+            document
+            for response in responses
+            if isinstance(response, tuple)
+            for document in response[0]
+        ]
+        complete = all(isinstance(response, tuple) and response[1] for response in responses)
         failures = [response for response in responses if isinstance(response, BaseException)]
         if not documents:
             failure = failures[0]
@@ -221,6 +272,7 @@ async def get_live_departures(
         )
         stop = location if isinstance(location, str) else f"{location.lat},{location.lon}"
         result = await transit.get_departures(stop, time_from=start, time_to=end, limit=limit)
+        result["window_complete"] = not result.get("truncated", False)
         result.setdefault("warnings", []).insert(
             0, f"TRIAS {error.code}; GTFS fallback is scheduled only. No live status is available."
         )
@@ -253,8 +305,10 @@ async def get_live_departures(
             warning for source_document in documents for warning in _warnings(source_document)
         )
     )
-    if failures:
-        warnings.append("Some nearby stop queries failed; these departures are partial.")
+    if failures or not complete:
+        warnings.append(
+            "Some departures could not be verified; these results are partial. Please try again."
+        )
     if isinstance(resolved, api.StopRef):
         warnings.append(
             "Station names use TRIAS's primary matching stop; "
@@ -269,7 +323,8 @@ async def get_live_departures(
             "Coordinate searches query up to three nearby stop groups within 500 m; "
             "check each stop name. The nearby-stop list may be incomplete."
         )
-    return _envelope(
+    page = items[cursor : cursor + limit]
+    result = _envelope(
         document,
         {
             "stop_or_location": stop_or_location,
@@ -280,11 +335,19 @@ async def get_live_departures(
             "time_from": start.isoformat(),
             "time_to": end.isoformat(),
             "limit": limit,
+            "cursor": cursor,
         },
-        items[:limit],
+        page,
         limit,
         warnings,
     )
+    more = cursor + len(page) < len(items)
+    result["truncated"] = more or not complete
+    result["window_complete"] = complete and not more
+    if more:
+        result["next_cursor"] = cursor + len(page)
+    result["available_count"] = len(items)
+    return result
 
 
 def _error(error: api.TriasError) -> dict:

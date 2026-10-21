@@ -413,3 +413,69 @@ async def test_overlapping_nearby_stop_groups_do_not_duplicate_departures(monkey
     respx.post(URL).mock(return_value=response(fixture("departures.xml")))
     result = await trias.get_live_departures({"lat": 49.14, "lon": 9.20}, START, END)
     assert result["count"] == 2
+
+
+async def test_departure_window_is_paged_beyond_first_source_response(monkeypatch):
+    from datetime import timedelta
+    from xml.etree.ElementTree import Element, SubElement
+
+    items = [START + timedelta(minutes=i) for i in range(70)]
+    calls = []
+
+    async def source(payload):
+        start = datetime.fromisoformat(
+            payload.findtext("Location/DepArrTime").replace("Z", "+00:00")
+        )
+        size = int(payload.findtext("Params/NumberOfResults"))
+        calls.append((start, size))
+        doc = Element("{" + api.NS["t"] + "}Trias")
+        for index, stamp in enumerate(time for time in items if time >= start):
+            if index >= size:
+                break
+            ns = "{" + api.NS["t"] + "}"
+            event = SubElement(doc, ns + "StopEvent")
+            call = SubElement(SubElement(event, ns + "ThisCall"), ns + "CallAtStop")
+            SubElement(call, ns + "StopPointRef").text = "de:08121:26"
+            SubElement(
+                SubElement(call, ns + "ServiceDeparture"), ns + "TimetabledTime"
+            ).text = stamp.isoformat()
+            service = SubElement(event, ns + "Service")
+            SubElement(service, ns + "JourneyRef").text = stamp.isoformat()
+        return doc
+
+    monkeypatch.setattr(api, "request", source)
+    first = await trias.get_live_departures(
+        "de:08121:26", START, START + timedelta(hours=2), limit=30
+    )
+    assert len(calls) == 3
+    assert calls[1][0] > calls[0][0]
+    assert first["available_count"] == 70
+    assert first["next_cursor"] == 30
+    assert not any("cap" in warning.lower() for warning in first["warnings"])
+    last = await trias.get_live_departures(
+        "de:08121:26",
+        START,
+        START + timedelta(hours=2),
+        limit=30,
+        cursor=60,
+    )
+    assert last["count"] == 10 and last["window_complete"] is True
+    assert "next_cursor" not in last
+
+
+@respx.mock
+async def test_trias_transport_logs_never_include_requestor_key(caplog):
+    import logging
+
+    route = respx.post(URL).mock(return_value=response(fixture("departures.xml")))
+    with caplog.at_level(logging.DEBUG):
+        await api.request(Element("StopEventRequest"))
+    assert "synthetic-test-requestor" not in caplog.text
+    assert b"synthetic-test-requestor" in route.calls[0].request.content
+    assert "authorization" not in route.calls[0].request.headers
+
+
+def test_endpoint_must_be_explicitly_configured(monkeypatch):
+    monkeypatch.delenv("TRIAS_URL")
+    with pytest.raises(api.TriasError, match="not_configured"):
+        api.configuration()
