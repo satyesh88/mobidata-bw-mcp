@@ -173,17 +173,18 @@ The MCP server gives an agent the **tools**. The skill teaches it **how to use t
 
 The skill only helps when the MCP server (hosted or local) is also connected.
 
-**Skill release v0.3.0** includes station-wide departure windows (up to 30 rows, including
-Stadtbahn stops at Heilbronn Hbf/Willy-Brandt-Pl.), explicit timeout wording, correct
-wheelchair flags, and conservative BFRK edge-to-track handling. It also covers accessible
-parking versus public transport comparisons and answer-driven navigation.
+**Skill release v0.4.0** adds TRIAS live departures and journey planning, with
+model-written summaries, consistent scheduled/live times, a two-hour live-data horizon,
+and eight departures per phone reply with “More?” continuation. It includes explicit
+dates and the after-midnight “tomorrow” rule, accurate platform wording, station-wide
+queries, accessibility caveats, and answer-driven navigation.
 
 Use an updated MCP server exposing `time_from`, `time_to` and `platform_only` on
 `get_departures`. Update a self-hosted server before installing this skill; see
 [Updating the hosted services](deploy/UPDATING.md). The skill ZIP contains instructions,
 not the server or its credentials.
 
-**Easiest:** download [mobidata-bw.zip for v0.3.0](https://github.com/satyesh88/mobidata-bw-mcp/releases/download/v0.3.0/mobidata-bw.zip) and upload it under **Customize → Skills → + → Upload a skill**.
+**Easiest:** download [mobidata-bw.zip for v0.4.0](https://github.com/satyesh88/mobidata-bw-mcp/releases/download/v0.4.0/mobidata-bw.zip) and upload it under **Customize → Skills → + → Upload a skill**.
 
 ### Claude (web and desktop): no terminal needed
 
