@@ -11,6 +11,7 @@ from ..clients import geocode
 from ..clients import trias as api
 from ..geo import compact_dict
 from ..models import Location, LocationInput, ResultEnvelope, source_info
+from ..transit_format import render_departures, render_journeys
 from . import transit
 from .common import parse_timestamp
 
@@ -60,21 +61,28 @@ def _true(node: Element | None, path: str) -> bool:
     return (_text(node, path) or "").lower() in {"true", "1"}
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
 def _call(node: Element | None, arrival: bool = False) -> dict[str, Any]:
     kind = "ServiceArrival" if arrival else "ServiceDeparture"
     planned = _text(node, f"{kind}/TimetabledTime")
     predicted = _text(node, f"{kind}/EstimatedTime")
     planned_dt, predicted_dt = parse_timestamp(planned), parse_timestamp(predicted)
+    # TRIAS ServiceTimeGroup defines EstimatedTime as prognosis; no universal live boolean.
+    # Future estimates may merely echo the schedule, so only use the near-term horizon.
+    live = bool(predicted_dt and planned_dt and planned_dt - _now() <= timedelta(hours=2))
+    seconds = (predicted_dt - planned_dt).total_seconds() if live else None
+    delay = (int(abs(seconds) / 60 + 0.5) * (1 if seconds >= 0 else -1)) if live else None
     return compact_dict(
         {
             "stop_id": _text(node, "StopPointRef"),
             "stop_name": _text(node, "StopPointName"),
             "scheduled_time": planned,
             "estimated_time": predicted,
-            "time": predicted or planned,
-            "delay_minutes": round((predicted_dt - planned_dt).total_seconds() / 60, 1)
-            if planned_dt and predicted_dt
-            else None,
+            "time": predicted if live else planned,
+            "delay_minutes": 0 if live and abs(seconds) < 60 else delay,
             "platform": _text(node, "EstimatedBay") or _text(node, "PlannedBay"),
             "scheduled_platform": _text(node, "PlannedBay"),
             "platform_changed": bool(
@@ -82,7 +90,7 @@ def _call(node: Element | None, arrival: bool = False) -> dict[str, Any]:
                 and _text(node, "PlannedBay")
                 and _text(node, "EstimatedBay") != _text(node, "PlannedBay")
             ),
-            "is_live": predicted_dt is not None,
+            "is_live": live,
             "cancelled": _true(node, "NotServicedStop"),
         }
     )
@@ -145,7 +153,7 @@ def _envelope(
     document: Element, query: dict, items: list[dict], limit: int, warnings: list[str]
 ) -> dict:
     stamp = document.find(".//s:ResponseTimestamp", api.NS)
-    return ResultEnvelope(
+    result = ResultEnvelope(
         query=query,
         count=len(items),
         items=items,
@@ -158,6 +166,10 @@ def _envelope(
         data_timestamp=parse_timestamp(stamp.text if stamp is not None else None),
         warnings=warnings,
     ).compact()
+    result["compact_list"] = (
+        render_journeys(result) if items and "legs" in items[0] else render_departures(result)[0]
+    )
+    return result
 
 
 def _departure_request(
@@ -299,7 +311,7 @@ async def get_live_departures(
             items.append(
                 {**service, **call, "cancelled": service["cancelled"] or call["cancelled"]}
             )
-    items.sort(key=lambda item: parse_timestamp(item["time"]))
+    items.sort(key=lambda item: parse_timestamp(item["scheduled_time"]))
     warnings = list(
         dict.fromkeys(
             warning for source_document in documents for warning in _warnings(source_document)
@@ -347,6 +359,7 @@ async def get_live_departures(
     if more:
         result["next_cursor"] = cursor + len(page)
     result["available_count"] = len(items)
+    result["compact_list"] = render_departures(result)[0]
     return result
 
 

@@ -18,7 +18,7 @@ Requires the MobiData BW MCP server (19 tools). This skill only says when to use
 - Times are Europe/Berlin local time, written HH:MM. Convert any UTC timestamp from a result and never write "UTC".
 - A date without a year means that day in the current year. If that day has already passed, do not silently use next year: say so in the first line, show today's situation, and ask whether the user meant next year, for example "15 Oct has passed. Showing today's situation. Did you mean 15 Oct 2027?" Pass dates to tools as ISO dates.
 - Reply in the user's language, German or English.
-- Between 00:00 and 04:00 Europe/Berlin, “tomorrow morning” or “morgen früh” means this morning, today's date. State that date assumption once. At other times use the next calendar date and state it; ask if an explicit date conflicts. Use the resolved date consistently in all tool timestamps.
+- Between 00:00 and 04:00 Europe/Berlin, “tomorrow (including tomorrow morning)” or “morgen (including morgen früh)” means this morning, today's date. State that date assumption once. At other times use the next calendar date and state it; ask if an explicit date conflicts. Use the resolved date consistently in all tool timestamps.
 - End every answer with the attribution line: Daten: MobiData BW® / NVBW und Datengeber. Name the licence when the user asks for it or the result flags it.
 - If a tool fails or returns nothing, say the lookup failed or found nothing. Never guess a reason and never fill the gap from memory.
 - Answer only the current question.
@@ -180,7 +180,8 @@ Keep internal per-platform query details, retries, and query strategy out of ans
 
 
 ### Consistent departure and trip wording
-For every departure, show `scheduled HH:MM` followed by `est. HH:MM (+N min)`, “on time” only when the prediction matches, or “no live prediction”. Compute delay from EstimatedTime minus TimetabledTime; convert each timestamp to Europe/Berlin independently. Never use the predicted time as the scheduled time.
+The model writes the answer: start with a one-line summary directly answering the question, then the tool's compact list, then a trip recommendation or caveat and the attribution. Keep “Searched around” (the bot adds it). Always show the date used for future questions, e.g. “Thu 22 Oct”. Preserve full line names such as MEX12. Do not repeat the queried stop on each departure row.
+For every departure, show `scheduled HH:MM` followed by `est. HH:MM (+N min)`, “on time”, or “no live prediction”. Only claim delay/on time when `is_live` is true and the event is within two hours of now. Further ahead say “scheduled (no live data yet)”, even when EstimatedTime equals TimetabledTime. Use whole-minute delays; differences under one minute mean “on time”. Sort by scheduled time. Convert each timestamp to Europe/Berlin independently. Never use the predicted time as the scheduled time. Prefer estimated platform over planned platform; say “platform changed” only when both exist and differ.
 For a trip leg, say “departs platform X, arrives platform Y”. Different platform numbers at different stations are not a change. Use “change” only for real transfers between services, based on the returned transfer count. Report an actual last-minute departure platform change separately.
 
 ### Station-wide departure windows

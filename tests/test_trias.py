@@ -10,6 +10,7 @@ import pytest
 import respx
 from defusedxml.ElementTree import fromstring
 
+from mobidata_bw_mcp import transit_format
 from mobidata_bw_mcp.clients import trias as api
 from mobidata_bw_mcp.models import Location
 from mobidata_bw_mcp.tools import trias
@@ -25,6 +26,8 @@ END = datetime(2026, 10, 22, 7, 30, tzinfo=UTC)
 def isolated_trias(monkeypatch):
     monkeypatch.setenv("TRIAS_REQUESTOR_REF", "synthetic-test-requestor")
     monkeypatch.setenv("TRIAS_URL", URL)
+    monkeypatch.setattr(trias, "_now", lambda: START)
+    monkeypatch.setattr(transit_format, "_now", lambda: START)
     api._CACHE.clear()
     api._STOPS.clear()
     monkeypatch.setattr(
@@ -62,8 +65,8 @@ def response(payload):
 async def test_live_departures_keep_prediction_delay_cancellation_and_platform_change():
     route = respx.post(URL).mock(return_value=response(fixture("departures.xml")))
     result = await trias.get_live_departures("Heilbronn Hbf", START, END)
-    assert [item["route"] for item in result["items"]] == ["S 4", "RE 8"]
-    scheduled, predicted = result["items"]
+    assert [item["route"] for item in result["items"]] == ["RE 8", "S 4"]
+    predicted, scheduled = result["items"]
     assert scheduled["is_live"] is False and "estimated_time" not in scheduled
     assert scheduled["cancelled"] is True
     assert predicted["is_live"] is True and predicted["delay_minutes"] == 7
@@ -97,7 +100,7 @@ async def test_cache_hit_reuses_source_response_and_does_not_mutate_other_result
     first["items"][0]["route"] = "mutated"
     second = await trias.get_live_departures("de:08121:26", START, END)
     assert route.call_count == 1
-    assert second["items"][0]["route"] == "S 4"
+    assert second["items"][0]["route"] == "RE 8"
 
 
 @respx.mock
@@ -479,3 +482,28 @@ def test_endpoint_must_be_explicitly_configured(monkeypatch):
     monkeypatch.delenv("TRIAS_URL")
     with pytest.raises(api.TriasError, match="not_configured"):
         api.configuration()
+
+
+@respx.mock
+async def test_trip_six_hours_ahead_has_no_live_claim(monkeypatch):
+    monkeypatch.setattr(trias, "_now", lambda: datetime(2026, 10, 22, 0, tzinfo=UTC))
+    monkeypatch.setattr(transit_format, "_now", trias._now)
+    respx.post(URL).mock(return_value=response(fixture("journeys.xml")))
+    result = await trias.plan_transit_journey(
+        "Heilbronn Hbf",
+        "Stuttgart Hbf",
+        departure_time=datetime(2026, 10, 22, 6, tzinfo=UTC),
+    )
+    calls = [
+        leg[key]
+        for item in result["items"]
+        for leg in item["legs"]
+        if leg["kind"] == "public_transport"
+        for key in ("board", "alight")
+    ]
+    assert calls
+    assert all(call["is_live"] is False for call in calls)
+    assert all("delay_minutes" not in call for call in calls)
+    assert "on time" not in result["compact_list"]
+    assert "no live data yet" in result["compact_list"]
+    assert "Thu 22 Oct" in result["compact_list"]

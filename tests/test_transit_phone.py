@@ -12,25 +12,34 @@ pytest.importorskip("telegram")
 
 from anthropic.types import TextBlock, ToolUseBlock
 
+from mobidata_bw_mcp import transit_format
 from mobidata_bw_mcp.telegram_bot import agent as agent_module
 from mobidata_bw_mcp.telegram_bot.agent import AgentAnswer, MobilityAgent, _morning_date
 from mobidata_bw_mcp.telegram_bot.main import BotHandlers, Settings
 from mobidata_bw_mcp.telegram_bot.mcp_bridge import MCPBridge
 from mobidata_bw_mcp.telegram_bot.timefmt import localize_tool_result
-from mobidata_bw_mcp.telegram_bot.transit_answers import (
+from mobidata_bw_mcp.tools import trias
+from mobidata_bw_mcp.transit_format import (
     render_departures,
     render_journeys,
     time_label,
 )
-from mobidata_bw_mcp.tools import trias
 
 BERLIN = ZoneInfo("Europe/Berlin")
+
+
+@pytest.fixture(autouse=True)
+def fixed_transit_clock(monkeypatch):
+    now = datetime(2026, 10, 22, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(trias, "_now", lambda: now)
+    monkeypatch.setattr(transit_format, "_now", lambda: now)
 
 
 def departure(index=0, **extra):
     stamp = datetime(2026, 10, 22, 0, 10, tzinfo=UTC) + timedelta(minutes=index)
     return {
         "scheduled_time": stamp.isoformat(),
+        "is_live": True,
         "route": f"N{index}",
         "headsign": "Schlossplatz",
         "stop_id": "test-stop",
@@ -67,7 +76,12 @@ def test_departure_prediction_status(prediction, status):
 
 def test_winter_departure_uses_its_own_date_offset():
     assert time_label(
-        {"scheduled_time": "2026-12-22T01:10:00Z", "estimated_time": "2026-12-22T01:12:00Z"}
+        {
+            "scheduled_time": "2026-12-22T01:10:00Z",
+            "estimated_time": "2026-12-22T01:12:00Z",
+            "is_live": True,
+        },
+        now=datetime(2026, 12, 22, 1, tzinfo=UTC),
     ) == ("scheduled 02:10 — est. 02:12 (+2 min)")
 
 
@@ -89,7 +103,15 @@ def test_phone_pages_have_eight_departures_and_no_internal_limit_text():
     assert end == 16
 
 
-@pytest.mark.parametrize("question", ["Tomorrow morning departures", "Abfahrten morgen früh"])
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Tomorrow morning departures",
+        "Abfahrten morgen früh",
+        "Departures tomorrow",
+        "Abfahrten morgen",
+    ],
+)
 def test_morning_after_midnight_resolves_to_today(question):
     now = datetime(2026, 10, 22, 1, 39, tzinfo=BERLIN)
     assert _morning_date(question, now).isoformat() == "2026-10-22"
@@ -136,7 +158,7 @@ async def test_agent_corrects_morning_tool_date_and_renders_phone_data(monkeypat
             content=[],
             structuredContent={
                 "items": [departure(i) for i in range(12)],
-                "query": {},
+                "query": {"resolved_stop": {"name": "Stuttgart Hbf"}},
                 "count": 12,
             },
         )
@@ -158,14 +180,30 @@ async def test_agent_corrects_morning_tool_date_and_renders_phone_data(monkeypat
                 ),
                 stop_reason="tool_use",
             ),
-            response(TextBlock(type="text", text="Result cap reached. The list ended at 07:56.")),
+            response(
+                TextBlock(
+                    type="text",
+                    text=(
+                        "Mostly on time; N2 is running late.\n"
+                        + render_departures({"items": [departure(i) for i in range(12)]})[0]
+                        + "\nDaten: MobiData BW® / NVBW und Datengeber"
+                    ),
+                )
+            ),
         ]
     )
     answer = await agent.answer("Departures tomorrow morning at Stuttgart Hbf", [])
     arguments = bridge.call_tool.await_args.args[1]
     assert arguments["time_from"] == "2026-10-22T07:30:00+02:00"
     assert arguments["time_to"] == "2026-10-22T08:30:00+02:00"
-    assert "22 Oct 2026" in answer.text
+    assert answer.text.startswith("Mostly on time; N2 is running late.")
+    assert answer.text.count("Searched around") == 1
+    assert "Thu 22 Oct 2026" in answer.text
+    sent = agent.client.messages.create.await_args_list[1].kwargs["messages"]
+    tool_content = next(
+        m["content"] for m in sent if m["role"] == "user" and isinstance(m["content"], list)
+    )
+    assert "compact_list" in tool_content[0]["content"]
     assert answer.text.count("scheduled ") == 8
     assert "More?" in answer.text
     assert "cap" not in answer.text and "ended" not in answer.text
@@ -250,3 +288,76 @@ async def test_more_uses_saved_departures_then_fetches_cursor_without_model():
     assert args["time_from"] == data["query"]["time_from"]
     handler.agent.answer.assert_awaited_once()
     assert "N10" in bot.send_message.await_args.args[1]
+
+
+@pytest.mark.parametrize(
+    "seconds,status", [(59, "on time"), (-59, "on time"), (90, "+2 min"), (-90, "-2 min")]
+)
+def test_delays_use_whole_minutes(seconds, status):
+    stamp = datetime(2026, 10, 22, 0, 10, tzinfo=UTC)
+    item = departure(estimated_time=(stamp + timedelta(seconds=seconds)).isoformat())
+    assert status in time_label(item)
+
+
+def test_six_hour_estimate_is_scheduled_even_when_equal():
+    item = departure(scheduled_time="2026-10-22T06:00:00Z", estimated_time="2026-10-22T06:00:00Z")
+    assert time_label(item) == "scheduled 08:00 (no live data yet)"
+    item["estimated_time"] = "2026-10-22T06:08:00Z"
+    assert "est." not in time_label(item)
+    item = departure(estimated_time="2026-10-22T00:18:00Z", is_live=False)
+    assert time_label(item) == "scheduled 02:10 — no live prediction"
+
+
+def test_compact_list_has_full_line_name_and_scheduled_order_without_repeated_stop():
+    late = departure(
+        0,
+        route="MEX12",
+        stop_name="Heilbronn Hbf",
+        platform="4",
+        estimated_time="2026-10-22T00:20:00Z",
+    )
+    earlier_prediction = departure(1, route="S4", stop_name="Heilbronn Hbf")
+    text, _ = render_departures({"items": [earlier_prediction, late]})
+    assert text.index("MEX12") < text.index("S4")
+    assert "Heilbronn Hbf" not in text
+    assert "MEX12 · Schlossplatz · platform 4 · scheduled" in text
+    assert "Thu 22 Oct" in text
+
+
+@pytest.mark.parametrize(
+    "planned,estimated,expected,changed",
+    [
+        ("7", "4", "4", True),
+        ("7", "7", "7", False),
+        ("7", None, "7", False),
+        (None, "4", "4", False),
+    ],
+)
+def test_arrival_bay_prefers_estimate_and_requires_both_for_change(
+    planned, estimated, expected, changed
+):
+    bays = f"<PlannedBay><Text>{planned}</Text></PlannedBay>" if planned else ""
+    bays += f"<EstimatedBay><Text>{estimated}</Text></EstimatedBay>" if estimated else ""
+    call = fromstring(
+        f'<LegAlight xmlns="http://www.vdv.de/trias">{bays}'
+        "<ServiceArrival><TimetabledTime>2026-10-22T00:30:00Z</TimetabledTime>"
+        "</ServiceArrival></LegAlight>"
+    )
+    result = trias._call(call, arrival=True)
+    assert result["platform"] == expected
+    assert result["platform_changed"] is changed
+
+
+def test_transit_summary_stays_first_with_search_location_and_date():
+    text = agent_module._finish_text(
+        "Mostly on time.\nscheduled 02:10 — on time\nDaten: MobiData BW® / NVBW und Datengeber",
+        "Departures tomorrow",
+        datetime(2026, 10, 22, 1, 39, tzinfo=BERLIN),
+        None,
+        ("Heilbronn Hbf", "station"),
+        "Assuming Thu 22 Oct.",
+    )
+    assert text.startswith("Mostly on time.\n")
+    assert text.count("Searched around") == 1
+    assert "Thu 22 Oct" in text
+    assert text.endswith("Daten: MobiData BW® / NVBW und Datengeber")

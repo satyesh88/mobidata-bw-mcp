@@ -416,8 +416,11 @@ and platform changes. If TRIAS is unavailable, it can return explicitly labelled
 scheduled data. `get_departures` retains its existing scheduled-only interface.
 TRIAS source requests page through the requested time window. Telegram shows at most
 eight departures per reply; “More?” continues the list. Each entry separates its scheduled
-time from its live estimate, on-time status or missing prediction. Times use Europe/Berlin.
-Between midnight and 04:00, “tomorrow morning” and “morgen früh” mean the current
+time from its live estimate, on-time status or missing prediction. Live status applies only
+to estimates within two hours; later services say “no live data yet”. Delays use whole
+minutes and departures sort by scheduled time. The model writes the summary and trip advice
+around a compact list, preserving full line names and showing the date used. Times use Europe/Berlin.
+Between midnight and 04:00, “tomorrow” (including “tomorrow morning”) and “morgen” (including “morgen früh”) mean the current
 local date, with the date assumption stated in the reply.
 `plan_transit_journey` accepts an origin, destination and either departure or arrival time,
 plus optional wheelchair preferences and transfer limits. Coordinate journeys request

@@ -30,6 +30,7 @@ from telegram.ext import (
     filters,
 )
 
+from ..transit_format import render_departures
 from ..version import log_startup
 from .agent import (
     MobilityAgent,
@@ -54,7 +55,6 @@ from .texts import (
     TIMEOUT_TEXT,
 )
 from .tool_logging import logged_arguments
-from .transit_answers import render_departures
 
 LOGGER = logging.getLogger("mobidata.telegram")
 STATE_TTL = timedelta(minutes=30)

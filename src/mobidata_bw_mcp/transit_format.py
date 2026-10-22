@@ -1,6 +1,7 @@
 """Render transit facts from structured data, independently of model wording."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from math import floor
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -18,7 +19,11 @@ def _datetime(value: Any) -> datetime | None:
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
 
-def time_label(item: dict, german: bool = False) -> str:
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def time_label(item: dict, german: bool = False, now: datetime | None = None) -> str:
     planned = _datetime(item.get("scheduled_time")) or _datetime(item.get("departure"))
     predicted = _datetime(item.get("estimated_time"))
     if planned is None:
@@ -26,10 +31,14 @@ def time_label(item: dict, german: bool = False) -> str:
     label = ("planmäßig " if german else "scheduled ") + planned.astimezone(BERLIN).strftime(
         "%H:%M"
     )
-    if predicted is None:
+    now = now or _now()
+    if planned - now > timedelta(hours=2):
+        return label + (" (noch keine Echtzeitdaten)" if german else " (no live data yet)")
+    if predicted is None or not item.get("is_live", False):
         return label + (" — keine Echtzeitprognose" if german else " — no live prediction")
-    delay = round((predicted - planned).total_seconds() / 60, 1)
-    if delay == 0:
+    seconds = (predicted - planned).total_seconds()
+    delay = floor(abs(seconds) / 60 + 0.5) * (1 if seconds >= 0 else -1)
+    if abs(seconds) < 60:
         return label + (" — pünktlich" if german else " — on time")
     clock = predicted.astimezone(BERLIN).strftime("%H:%M")
     return label + f" — {'erw.' if german else 'est.'} {clock} ({delay:+g} min)"
@@ -38,19 +47,30 @@ def time_label(item: dict, german: bool = False) -> str:
 def render_departures(
     data: dict, offset: int = 0, german: bool = False, accessibility: bool = False
 ) -> tuple[str, int]:
-    items = data.get("items", [])
+    items = sorted(
+        data.get("items", []),
+        key=lambda item: (
+            _datetime(item.get("scheduled_time"))
+            or _datetime(item.get("departure"))
+            or datetime.max.replace(tzinfo=UTC)
+        ),
+    )
     page = items[offset : offset + PHONE_DEPARTURES]
-    lines = ["Abfahrten" if german else "Departures"]
+    stamp = _datetime(data.get("query", {}).get("time_from"))
+    if stamp is None and items:
+        stamp = _datetime(items[0].get("scheduled_time")) or _datetime(items[0].get("departure"))
+    date_label = " — " + stamp.astimezone(BERLIN).strftime("%a %d %b") if stamp else ""
+    lines = [("Abfahrten" if german else "Departures") + date_label]
     for item in page:
         parts = [
-            time_label(item, german),
             str(item.get("route") or "?"),
             str(item.get("headsign") or ("Ziel unbekannt" if german else "destination unknown")),
         ]
-        if item.get("stop_name"):
-            parts.append(str(item["stop_name"]))
         if item.get("platform"):
             parts.append(f"{'Gleis' if german else 'platform'} {item['platform']}")
+        if item.get("platform_changed"):
+            parts.append("Gleis geändert" if german else "platform changed")
+        parts.append(time_label(item, german))
         if item.get("cancelled"):
             parts.append("fällt aus" if german else "cancelled")
         if accessibility:
@@ -90,7 +110,8 @@ def render_departures(
 
 
 def render_journeys(data: dict, german: bool = False) -> str:
-    lines = []
+    stamp = _datetime(data.get("query", {}).get("requested_time"))
+    lines = [stamp.astimezone(BERLIN).strftime("%a %d %b")] if stamp else []
     for index, item in enumerate(data.get("items", [])[:3], 1):
         transfers = item.get("transfers", 0)
         transfer_label = (
@@ -117,6 +138,13 @@ def render_journeys(data: dict, german: bool = False) -> str:
                 if german
                 else f"departs platform {source or '?'}, arrives platform {target or '?'}"
             )
+            changes = [
+                label
+                for call, label in ((board, "departure"), (alight, "arrival"))
+                if call.get("platform_changed")
+            ]
+            if changes:
+                platforms += "; platform changed (" + ", ".join(changes) + ")"
             lines.append(
                 f"{leg.get('route', '?')}: {time_label(board, german)} → "
                 f"{time_label(alight, german)}; {platforms}"

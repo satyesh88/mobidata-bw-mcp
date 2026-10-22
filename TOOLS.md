@@ -281,14 +281,14 @@ Example question: Are departures from Heilbronn Hbf delayed right now?
 | `fallback_to_schedule` | boolean | default `True` | Use explicitly labelled GTFS scheduled data on TRIAS failure. |
 | `cursor` | integer | default `0` | Result offset; use the previous response's next_cursor (default 0). |
 
-**Returns:** route, headsign, stop_name, scheduled_time, estimated_time, time, delay_minutes, platform, scheduled_platform, platform_changed, cancelled, is_live. Paging metadata includes next_cursor, available_count and window_complete. The source changes to GTFS when fallback is used.
+**Returns:** route, headsign, stop_name, scheduled_time, estimated_time, time, delay_minutes, platform, scheduled_platform, platform_changed, cancelled, is_live. compact_list is a phone-sized list for model-written answers. Paging metadata includes next_cursor, available_count and window_complete. The source changes to GTFS when fallback is used.
 
 **Source:** NVBW EFA-BW TRIAS 1.2; optional scheduled GTFS fallback. **Licence:** Datenlizenz Deutschland - Namensnennung 2.0.
 
 **Caveats:**
 - Requires TRIAS_URL and TRIAS_REQUESTOR_REF on the MCP server; requests use XML over HTTPS.
 - Source requests page through the time window; pass next_cursor as cursor with the same window to retrieve subsequent result pages.
-- Missing predictions do not mean on time. Operator coverage varies.
+- Missing predictions do not mean on time. Live status is restricted to the next two hours; further-ahead estimates remain scheduled. Delays use whole minutes. Departures are sorted by scheduled time. Operator coverage varies.
 - Coordinate queries discover up to three stop groups within 500 m; coverage may be incomplete.
 - Identical successful responses are cached for 30 seconds; station IDs for 24 hours. GTFS fallback is scheduled only.
 
@@ -308,7 +308,7 @@ Example question: Find a wheelchair-suitable journey from Stuttgart Hbf to Heilb
 | `max_transfers` | integer | optional | Maximum transfers (0–5); zero is filtered locally. |
 | `limit` | integer | default `3` | Maximum journey alternatives (1–5). |
 
-**Returns:** Journey departure, arrival, duration, transfers and all legs. Timed legs carry board/alight stops, scheduled and estimated times, platforms and cancellation. Wheelchair preferences are reported separately from verified accessibility.
+**Returns:** Journey departure, arrival, duration, transfers and all legs. Timed legs carry board/alight stops, scheduled and estimated times, platforms and cancellation. compact_list provides a short list with the date used. Estimated bays take precedence; platform_changed requires differing planned and estimated bays. Wheelchair preferences are reported separately from verified accessibility.
 
 **Source:** NVBW EFA-BW TRIAS 1.2 TripRequest. **Licence:** Datenlizenz Deutschland - Namensnennung 2.0.
 

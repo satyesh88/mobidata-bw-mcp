@@ -205,6 +205,7 @@ TOOLS: dict[str, dict[str, Any]] = {
         "licence": DL,
         "returns": "route, headsign, stop_name, scheduled_time, estimated_time, time, "
         "delay_minutes, platform, scheduled_platform, platform_changed, cancelled, is_live. "
+        "compact_list is a phone-sized list for model-written answers. "
         "Paging metadata includes next_cursor, available_count and window_complete. "
         "The source changes to GTFS when fallback is used.",
         "caveats": [
@@ -212,7 +213,9 @@ TOOLS: dict[str, dict[str, Any]] = {
             "requests use XML over HTTPS.",
             "Source requests page through the time window; pass next_cursor as cursor "
             "with the same window to retrieve subsequent result pages.",
-            "Missing predictions do not mean on time. Operator coverage varies.",
+            "Missing predictions do not mean on time. Live status is restricted to the "
+            "next two hours; further-ahead estimates remain scheduled. Delays use whole minutes. "
+            "Departures are sorted by scheduled time. Operator coverage varies.",
             "Coordinate queries discover up to three stop groups within 500 m; "
             "coverage may be incomplete.",
             "Identical successful responses are cached for 30 seconds; station IDs for 24 hours. "
@@ -234,6 +237,8 @@ TOOLS: dict[str, dict[str, Any]] = {
         "licence": DL,
         "returns": "Journey departure, arrival, duration, transfers and all legs. Timed legs "
         "carry board/alight stops, scheduled and estimated times, platforms and cancellation. "
+        "compact_list provides a short list with the date used. Estimated bays take precedence; "
+        "platform_changed requires differing planned and estimated bays. "
         "Wheelchair preferences are reported separately from verified accessibility.",
         "caveats": [
             "Requires configured TRIAS access. No route is invented if the source fails.",

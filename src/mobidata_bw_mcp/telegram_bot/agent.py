@@ -14,11 +14,11 @@ from anthropic import AsyncAnthropic
 
 from ..geo import haversine_m
 from ..station_complexes import canonical_station_input
+from ..transit_format import render_departures, render_journeys
 from .formatting import is_search_header
 from .mcp_bridge import MCPBridge, result_text, tool_error_result, tool_failure_message
 from .timefmt import localize_clock_text, localize_tool_result
 from .tool_logging import logged_arguments
-from .transit_answers import render_departures, render_journeys
 
 OFF_TOPIC_MARKER = "[[OFF_TOPIC]]"
 CHANNEL_LINE = "Channel: Telegram (mobile chat app)"
@@ -63,6 +63,14 @@ Telegram channel rules (these override anything above):
   never claim preferences prove accessibility or lift operation. Ask for a missing origin.
 - Keep scheduled_time and estimated_time distinct. Missing prediction does not mean on time;
   show cancellations and platform changes. Never recommend a cancelled service.
+- You write the final answer. Start with a one-line summary directly answering the question,
+  then include the tool's compact_list verbatim in the user's language. Keep full line names
+  such as MEX12; never shorten them to MEX. Do not repeat the queried stop on every row.
+  For trips add a recommendation or relevant caveat, then attribution. Always show the date
+  used for future questions (e.g. Thu 22 Oct); the compact list includes it.
+- Report delay/on time only when is_live is true and within two hours of the current time.
+  Further ahead say scheduled (no live data yet), even if estimated_time equals scheduled_time.
+  Delays use whole minutes; differences under one minute mean on time. Sort by scheduled time.
 - For every departure use scheduled HH:MM, then est. HH:MM (+N min), on time, or
   no live prediction. Never label an estimated time as scheduled. Times are Europe/Berlin.
 - Show at most 8 departures on a phone, then a short summary and More? for remaining items.
@@ -71,8 +79,9 @@ Telegram channel rules (these override anything above):
   extend the time query to cover the requested window. If verification fails, say so simply.
 - For trip legs say departs platform X, arrives platform Y. Use change only for real
   transfers between services; different platform numbers at different stations are not a change.
-- Between 00:00 and 04:00 Europe/Berlin, tomorrow morning or morgen früh means today's
-  morning. At other times use the next calendar date. State the assumed date once, or ask
+- Between 00:00 and 04:00 Europe/Berlin, tomorrow (including tomorrow morning) or
+  morgen (including morgen früh) means today. At other times use the next calendar date.
+  State the assumed date once, or ask
   if it conflicts with an explicit date. Use the resolved date for every tool timestamp.
 - Never mention tool names, internal queries, retries, or per-platform query details.
 - Timetable accessibility unknown means "no accessibility info in the timetable";
@@ -287,7 +296,6 @@ class MobilityAgent:
         departures_timed_out = False
         departure_data = None
         departure_request = None
-        journey_data = None
         departure_calls = {}
         for _round in range(self.max_tool_rounds + 1):
             if time.monotonic() >= tool_deadline:
@@ -353,7 +361,6 @@ class MobilityAgent:
                         grounding_retry = True
                         continue
                     text, off_topic = _ungrounded_reply(question)
-                text = _transit_text(text, tools_used, departure_data, journey_data, question)
                 final_text = _finish_text(
                     text,
                     question,
@@ -523,17 +530,33 @@ class MobilityAgent:
                     }:
                         with suppress(ValueError, AttributeError):
                             payload = json.loads(serialized_result)
-                            if isinstance(payload.get("items"), list) and payload["items"]:
-                                if block.name == "plan_transit_journey":
-                                    journey_data = payload
-                                else:
-                                    departure_data = payload
-                                    departure_request = {
-                                        "tool": block.name,
-                                        "arguments": departure_calls.get(
-                                            block.id, dict(block.input)
-                                        ),
-                                    }
+                            if (
+                                isinstance(payload.get("items"), list)
+                                and payload["items"]
+                                and block.name != "plan_transit_journey"
+                            ):
+                                departure_data = payload
+                                departure_request = {
+                                    "tool": block.name,
+                                    "arguments": departure_calls.get(block.id, dict(block.input)),
+                                }
+                    if block.name in {
+                        "get_departures",
+                        "get_live_departures",
+                        "plan_transit_journey",
+                    }:
+                        with suppress(ValueError, AttributeError):
+                            payload = json.loads(serialized_result)
+                            german = bool(_GERMAN_PATTERN.search(question))
+                            payload["compact_list"] = (
+                                render_journeys(payload, german)
+                                if block.name == "plan_transit_journey"
+                                else render_departures(payload, german=german)[0]
+                            )
+                            serialized_result = json.dumps(
+                                {"compact_list": payload.pop("compact_list"), **payload},
+                                ensure_ascii=False,
+                            )
                     partial_data.append(serialized_result)
                     serialized_result = localize_tool_result(serialized_result)
                     searched_place = searched_place or _resolved_place(serialized_result)
@@ -604,7 +627,6 @@ class MobilityAgent:
             text, off_topic = _off_topic_reply(question), True
         elif not tools_used and _looks_factual(text):
             text, off_topic = _ungrounded_reply(question)
-        text = _transit_text(text, tools_used, departure_data, journey_data, question)
         final_text = _finish_text(
             text,
             question,
@@ -627,31 +649,8 @@ class MobilityAgent:
         )
 
 
-def _transit_text(
-    text: str, tools: list[str], departures: dict | None, journeys: dict | None, question: str
-) -> str:
-    german = bool(_GERMAN_PATTERN.search(question))
-    if departures and set(tools) <= {
-        "get_departures",
-        "get_live_departures",
-        "find_transit",
-        "plan_transit_journey",
-    }:
-        rendered = render_departures(
-            departures,
-            german=german,
-            accessibility=bool(
-                re.search(r"wheelchair|accessible|barriere|rollstuhl", question, re.I)
-            ),
-        )[0]
-        return rendered + ("\n" + render_journeys(journeys, german) if journeys else "")
-    if journeys and set(tools) <= {"plan_transit_journey", "find_transit"}:
-        return render_journeys(journeys, german)
-    return text
-
-
 def _morning_date(question: str, now: datetime) -> date | None:
-    if not re.search(r"\b(?:tomorrow morning|morgen früh)\b", question, re.I):
+    if not re.search(r"\b(?:tomorrow(?: morning)?|morgen(?: früh)?)\b", question, re.I):
         return None
     if _yearless_dates(question, now) or re.search(r"\b\d{4}-\d{2}-\d{2}\b", question):
         return None
@@ -663,8 +662,8 @@ def _morning_line(question: str, now: datetime) -> str | None:
     if day is None:
         return None
     if _GERMAN_PATTERN.search(question) or "morgen früh" in question.casefold():
-        return f"Ich nehme den Morgen des {day:%d.%m.%Y} an."
-    return f"Assuming you mean the morning of {day:%d %b %Y}."
+        return f"Ich nehme den {day:%a %d %b %Y} an."
+    return f"Assuming you mean {day:%a %d %b %Y}."
 
 
 def _looks_factual(text: str) -> bool:
@@ -685,7 +684,7 @@ def _system_prompt(now: datetime) -> str:
         f"{SYSTEM_PROMPT}\n"
         "A date without a year means that day this year. If it has already passed, do not use "
         "next year: use today's date instead, as the context note says. "
-        f"For tomorrow morning / morgen früh the resolved date now is "
+        f"For tomorrow / morgen (including morning / früh) the resolved date now is "
         f"{(now.date() if now.hour < 4 else now.date() + timedelta(days=1)).isoformat()}."
     )
 
@@ -785,7 +784,18 @@ def _finish_text(
     if searched_place is not None:
         final_text = _with_searched_place(final_text, searched_place, question)
     if date_line:
-        final_text = f"{date_line}\n{final_text}"
+        if "scheduled " in final_text or "planmäßig " in final_text:
+            lines = final_text.splitlines()
+            index = 2 if lines and lines[0].startswith("📍") else 1
+            lines.insert(index, date_line)
+            final_text = "\n".join(lines)
+        else:
+            final_text = f"{date_line}\n{final_text}"
+    if "scheduled " in final_text or "planmäßig " in final_text:
+        lines = final_text.splitlines()
+        if len(lines) > 1 and lines[0].startswith("📍"):
+            lines.insert(1, lines.pop(0))
+            final_text = "\n".join(lines)
     return final_text
 
 
@@ -830,6 +840,18 @@ def _resolved_place(text: str) -> tuple[str, str | None] | None:
                 location = query["location"]
                 if location.get("label"):
                     return str(location["label"]), location.get("type")
+            if (
+                isinstance(query, dict)
+                and isinstance(query.get("resolved_stop"), dict)
+                and query["resolved_stop"].get("name")
+            ):
+                return str(query["resolved_stop"]["name"]), "station"
+            if (
+                isinstance(query, dict)
+                and query.get("requested_time")
+                and isinstance(query.get("origin"), str)
+            ):
+                return query["origin"], None
             for nested in item.values():
                 found = find(nested)
                 if found:
